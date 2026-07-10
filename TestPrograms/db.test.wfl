@@ -74,6 +74,24 @@ describe "Scriptorium data layer":
         close database conn
     end test
 
+    test "pages: list_by_author scopes to the owner":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store a1 as user_create of conn and "ada" and "h" and "admin"
+        store a2 as user_create of conn and "bob" and "h" and "author"
+        store pg1 as page_create of conn and "about" and "About" and "x" and "published" and 1
+        store pg2 as page_create of conn and "contact" and "Contact" and "y" and "published" and 2
+        store all_pages as page_list_all of conn
+        expect length of all_pages to equal 2
+        store bobs as page_list_by_author of conn and 2
+        expect length of bobs to equal 1
+        store head as bobs[0]
+        expect head["slug"] to equal "contact"
+        store got as page_by_id of conn and 1
+        expect got["author_id"] to equal 1
+        close database conn
+    end test
+
     test "sessions: expired session does not resolve":
         open database at "sqlite::memory:" as conn
         store m as db_migrate of conn

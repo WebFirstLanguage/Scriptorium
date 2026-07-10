@@ -187,6 +187,10 @@ define action called page_list_all with parameters conn:
     return query conn with "SELECT id, slug, title, status, updated_at FROM pages ORDER BY title"
 end action
 
+define action called page_list_by_author with parameters conn and author_id:
+    return query conn with "SELECT id, slug, title, status, updated_at FROM pages WHERE author_id = ? ORDER BY title" and parameters [author_id]
+end action
+
 // Published pages, for the site nav.
 define action called page_list_published with parameters conn:
     return query conn with "SELECT id, slug, title FROM pages WHERE status = 'published' ORDER BY title"

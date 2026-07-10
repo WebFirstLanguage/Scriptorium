@@ -79,7 +79,7 @@ define action called serve_asset with parameters req and req_path:
         call send_text_status with req and "Forbidden" and 403
         return yes
     end check
-    store rel as substring of req_path and 8 and (length of req_path)
+    store rel as substring of req_path and 8 and ((length of req_path) minus 8)
     store filepath as "static/" with rel
     check if file exists at filepath:
         open file at filepath for reading binary as asset_file
@@ -336,7 +336,7 @@ define action called handle_post_create with parameters db and req and req_body 
     store the_slug as field_or of f and "slug" and ""
     store the_body as field_or of f and "body_markdown" and ""
     store the_status as field_or of f and "status" and "draft"
-    check if the_title is equal to "":
+    check if (trim of the_title) is equal to "":
         create map entered:
             "id" is ""
             "title" is the_title
@@ -453,7 +453,11 @@ end action
 
 define action called handle_pages_list with parameters db and req and user:
     store site_map as site_context of db and user
-    store rows as page_list_all of db
+    check if (is_admin of user) is equal to yes:
+        store rows as page_list_all of db
+    otherwise:
+        store rows as page_list_by_author of db and user["id"]
+    end check
     create map ctx:
         "site" is site_map
         "pages" is rows
@@ -474,7 +478,7 @@ define action called handle_page_create with parameters db and req and req_body 
     store the_slug as field_or of f and "slug" and ""
     store the_body as field_or of f and "body_markdown" and ""
     store the_status as field_or of f and "status" and "draft"
-    check if the_title is equal to "":
+    check if (trim of the_title) is equal to "":
         create map entered:
             "id" is ""
             "title" is the_title
@@ -521,8 +525,12 @@ define action called handle_page_edit with parameters db and req and user and id
         call handle_404 with db and req and user
         return yes
     end check
-    store action_url as "/admin/pages/" with the_id
-    call render_page_form with db and req and user and page_row and "Edit page" and action_url and ""
+    check if (can_edit of user and page_row["author_id"]) is equal to yes:
+        store action_url as "/admin/pages/" with the_id
+        call render_page_form with db and req and user and page_row and "Edit page" and action_url and ""
+    otherwise:
+        call send_forbidden with req
+    end check
     return yes
 end action
 
@@ -533,25 +541,38 @@ define action called handle_page_update with parameters db and req and req_body 
         call handle_404 with db and req and user
         return yes
     end check
-    store f as parse_form_urlencoded of req_body
-    store the_title as field_or of f and "title" and ""
-    store the_slug as field_or of f and "slug" and ""
-    store the_body as field_or of f and "body_markdown" and ""
-    store the_status as field_or of f and "status" and "draft"
-    check if the_slug is equal to "":
-        change the_slug to slugify of the_title
+    check if (can_edit of user and page_row["author_id"]) is equal to yes:
+        store f as parse_form_urlencoded of req_body
+        store the_title as field_or of f and "title" and ""
+        store the_slug as field_or of f and "slug" and ""
+        store the_body as field_or of f and "body_markdown" and ""
+        store the_status as field_or of f and "status" and "draft"
+        check if the_slug is equal to "":
+            change the_slug to slugify of the_title
+        otherwise:
+            change the_slug to slugify of the_slug
+        end check
+        store upd as page_update of db and the_id and the_slug and the_title and the_body and the_status
+        call send_redirect with req and "/admin/pages"
     otherwise:
-        change the_slug to slugify of the_slug
+        call send_forbidden with req
     end check
-    store upd as page_update of db and the_id and the_slug and the_title and the_body and the_status
-    call send_redirect with req and "/admin/pages"
     return yes
 end action
 
 define action called handle_page_delete with parameters db and req and user and id_text:
     store the_id as to_int of id_text and 0
-    store del as page_delete of db and the_id
-    call send_redirect with req and "/admin/pages"
+    store page_row as page_by_id of db and the_id
+    check if page_row is nothing:
+        call handle_404 with db and req and user
+        return yes
+    end check
+    check if (can_edit of user and page_row["author_id"]) is equal to yes:
+        store del as page_delete of db and the_id
+        call send_redirect with req and "/admin/pages"
+    otherwise:
+        call send_forbidden with req
+    end check
     return yes
 end action
 
@@ -604,6 +625,9 @@ define action called handle_user_create with parameters db and req and req_body 
     store username as field_or of f and "username" and ""
     store password as field_or of f and "password" and ""
     store role_name as field_or of f and "role" and "author"
+    check if role_name is not equal to "admin":
+        change role_name to "author"
+    end check
     store problem as ""
     check if username is equal to "":
         change problem to "Username is required."
@@ -662,6 +686,9 @@ define action called handle_user_update with parameters db and req and req_body 
     end check
     store f as parse_form_urlencoded of req_body
     store role_name as field_or of f and "role" and "author"
+    check if role_name is not equal to "admin":
+        change role_name to "author"
+    end check
     store password as field_or of f and "password" and ""
     store role_upd as user_set_role of db and the_id and role_name
     check if password is not equal to "":

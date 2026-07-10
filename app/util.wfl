@@ -57,8 +57,9 @@ define action called map_has with parameters obj and the_key:
     return has_key
 end action
 
-// field_or: read a text field from a parsed-form/object map, or a fallback.
-// Trims surrounding whitespace so blank textareas don't smuggle spaces.
+// field_or: read a text field from a parsed-form/object map, or a fallback
+// when the key is absent or its value is nothing. Returns the value as-is;
+// callers trim/validate where it matters (e.g. the title checks in main.wfl).
 define action called field_or with parameters obj and the_key and fallback:
     store result_value as fallback
     try:
