@@ -21,6 +21,9 @@ define action called db_migrate with parameters conn:
     store r5 as execute conn with "CREATE TABLE IF NOT EXISTS settings (skey TEXT PRIMARY KEY, svalue TEXT NOT NULL DEFAULT '')"
     store r6 as execute conn with "CREATE TABLE IF NOT EXISTS media (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT UNIQUE NOT NULL, original_name TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0, uploader_id INTEGER, created_at TEXT DEFAULT (datetime('now')))"
     store r7 as execute conn with "CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, attempted_at TEXT DEFAULT (datetime('now')))"
+    // The rate limiter filters on (ip, attempted_at) on every login POST —
+    // exactly when the table is growing fastest — so keep that path indexed.
+    store r7b as execute conn with "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"
     // Databases created before the CSRF work lack sessions.csrf_token; the
     // ALTER fails harmlessly once the column exists (no IF NOT EXISTS in SQLite).
     try:

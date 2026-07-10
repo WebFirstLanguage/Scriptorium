@@ -51,7 +51,7 @@ wfl main.wfl
 On first run Scriptorium creates `scriptorium.db`, seeds default settings, and
 prints a **one-time admin password**:
 
-```
+```text
 ==================================================
  Scriptorium — first run: seeded an admin account
    username:  admin
@@ -91,7 +91,7 @@ as a hidden `csrf_token` field) — requests without it get a 403.
 
 ## Project layout
 
-```
+```text
 main.wfl              Boot (open DB, migrate, seed) + request loop + router + handlers
 .wflcfg               WFL runtime config (bind address, TLS, body-size cap)
 app/

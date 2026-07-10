@@ -133,6 +133,13 @@ noted inline:
   never reach the filesystem. Bytes land in `static/uploads/` (served by the
   existing `/assets/*` route, which already rejects `..`), and a `media` row
   records size/type/uploader. Deleting is uploader-or-admin (`can_edit`).
+  The file *content* is not decoded or signature-checked: WFL currently has
+  no image decoder and no byte-level access to binary values, so the
+  extension allowlist is the only content gate. The exposure is contained —
+  uploads are always served with an extension-derived `image/*` content
+  type, never `text/html` — so mislabelled bytes render as a broken image
+  rather than executing. Revisit if the WFL stdlib grows binary inspection
+  primitives.
 
 ## Data model
 

@@ -899,7 +899,23 @@ define action called handle_media_upload with parameters db and req and user:
     open file at stored_path for writing binary as upload_file
     write binary file_bytes into upload_file
     close file upload_file
-    store created as media_create of db and stored_name and orig_name and (mime_type of stored_name) and (length of file_bytes) and user["id"]
+    // If the metadata insert fails, remove the just-written file so nothing
+    // stays publicly reachable without a library record.
+    store insert_ok as yes
+    try:
+        store created as media_create of db and stored_name and orig_name and (mime_type of stored_name) and (length of file_bytes) and user["id"]
+    when error:
+        change insert_ok to no
+    end try
+    check if insert_ok is equal to no:
+        try:
+            delete file at stored_path
+        when error:
+            display "Media upload: failed to remove orphaned file " with stored_path
+        end try
+        call handle_media_list with db and req and user and "Saving the upload failed — try again."
+        return yes
+    end check
     call send_redirect with req and "/admin/media"
     return yes
 end action
@@ -912,11 +928,18 @@ define action called handle_media_delete with parameters db and req and user and
         return yes
     end check
     check if (can_edit of user and media_row["uploader_id"]) is equal to yes:
-        store stored_path as "static/uploads/" with media_row["filename"]
-        check if file exists at stored_path:
-            delete file at stored_path
-        end check
+        // Remove the DB row first: a leftover file with no record is merely
+        // orphaned bytes, but a record pointing at a deleted file would keep
+        // rendering a broken entry in the library.
         store del as media_delete of db and the_id
+        store stored_path as "static/uploads/" with media_row["filename"]
+        try:
+            check if file exists at stored_path:
+                delete file at stored_path
+            end check
+        when error:
+            display "Media delete: failed to remove file " with stored_path
+        end try
         call send_redirect with req and "/admin/media"
     otherwise:
         call send_forbidden with req
