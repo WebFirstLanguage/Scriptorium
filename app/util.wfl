@@ -1,0 +1,99 @@
+// Scriptorium — small utility helpers.
+//
+// Form-body, cookie, and query parsing are provided by WFL's standard library
+// (parse_form_urlencoded / parse_cookies / parse_query_string, all of which
+// percent-decode), so we only add what the stdlib does not give us: slug
+// generation, a couple of string conveniences, and safe map access.
+//
+// Pull in with:  include from "app/util.wfl"
+
+// slugify: turn a human title into a URL-safe slug.
+//   "Hello, World!" -> "hello-world"
+// Keeps [a-z0-9], turns any run of other characters into a single "-", and
+// trims leading/trailing dashes. Pure and easy to unit test.
+define action called slugify with parameters raw_title:
+    store lowered as tolowercase of raw_title
+    store allowed as "abcdefghijklmnopqrstuvwxyz0123456789"
+    store n as length of lowered
+    store result_slug as ""
+    store last_was_dash as yes
+    check if n is equal to 0:
+        return ""
+    end check
+    count from 0 to n minus 1:
+        store ch as substring of lowered and count and 1
+        check if contains of allowed and ch:
+            change result_slug to result_slug with ch
+            change last_was_dash to no
+        otherwise:
+            check if last_was_dash is equal to no:
+                change result_slug to result_slug with "-"
+                change last_was_dash to yes
+            end check
+        end check
+    end count
+    // trim a single trailing dash if present
+    store slug_len as length of result_slug
+    check if slug_len is greater than 0:
+        store tail as substring of result_slug and slug_len minus 1 and 1
+        check if tail is equal to "-":
+            change result_slug to substring of result_slug and 0 and slug_len minus 1
+        end check
+    end check
+    return result_slug
+end action
+
+// map_has: does an object contain a key? (objects only carry present keys)
+define action called map_has with parameters obj and the_key:
+    store has_key as no
+    try:
+        store probe as obj[the_key]
+        check if probe is not nothing:
+            change has_key to yes
+        end check
+    when error:
+        change has_key to no
+    end try
+    return has_key
+end action
+
+// field_or: read a text field from a parsed-form/object map, or a fallback
+// when the key is absent or its value is nothing. Returns the value as-is;
+// callers trim/validate where it matters (e.g. the title checks in main.wfl).
+define action called field_or with parameters obj and the_key and fallback:
+    store result_value as fallback
+    try:
+        store raw_value as obj[the_key]
+        check if raw_value is not nothing:
+            change result_value to raw_value
+        end check
+    when error:
+        change result_value to fallback
+    end try
+    return result_value
+end action
+
+// to_int: parse a text value to a number, or return fallback when it isn't one.
+// Uses parse_json (which yields a Number for a bare numeric string).
+define action called to_int with parameters raw_text and fallback:
+    store result_num as fallback
+    try:
+        store parsed as parse_json of raw_text
+        check if (typeof of parsed) is equal to "Number":
+            change result_num to parsed
+        end check
+    when error:
+        change result_num to fallback
+    end try
+    return result_num
+end action
+
+// truncate_text: cut a string to at most max_len characters, adding an ellipsis.
+define action called truncate_text with parameters source_text and max_len:
+    store source_len as length of source_text
+    check if source_len is less than or equal to max_len:
+        return source_text
+    end check
+    store cut as substring of source_text and 0 and max_len
+    return cut with "…"
+end action

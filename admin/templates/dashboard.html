@@ -1,0 +1,31 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block content %}
+<div class="stat-row">
+  <div class="stat"><div class="stat__n">{{ stats.posts }}</div><div class="stat__l">Posts</div></div>
+  <div class="stat"><div class="stat__n">{{ stats.pages }}</div><div class="stat__l">Pages</div></div>
+  {% if site.is_admin %}<div class="stat"><div class="stat__n">{{ stats.users }}</div><div class="stat__l">Users</div></div>{% endif %}
+</div>
+<div class="panel">
+  <div class="panel__head">
+    <h2>Recent posts</h2>
+    <a class="btn btn--primary" href="/admin/posts/new">New post</a>
+  </div>
+  <table class="table">
+    <thead><tr><th>Title</th><th>Status</th><th>Author</th><th>Updated</th></tr></thead>
+    <tbody>
+    {% for post in posts %}
+      <tr>
+        <td><a href="/admin/posts/{{ post.id }}/edit">{{ post.title }}</a></td>
+        <td><span class="badge badge--{{ post.status }}">{{ post.status }}</span></td>
+        <td>{{ post.author_name | default('—') }}</td>
+        <td class="muted">{{ post.updated_at | truncate(16, '') }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">No posts yet. <a href="/admin/posts/new">Write one →</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

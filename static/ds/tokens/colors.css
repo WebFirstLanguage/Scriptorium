@@ -1,0 +1,90 @@
+/* ============================================================
+   WFL — Colors
+   Brand palette from the WFL color specimen (Verdant Teal, Deep
+   Teal, Ink, Warm Amber, Mist). WFL runs a dark surface by
+   default: Ink is the background, Mist is the text.
+   ============================================================ */
+:root {
+  /* ---- Brand core (exact spec hexes) ---- */
+  --wfl-verdant-teal: #12A594; /* primary */
+  --wfl-deep-teal:    #0B7A6E; /* pressed / deep */
+  --wfl-ink:          #10221F; /* background */
+  --wfl-warm-amber:   #F2A73B; /* accent / highlight */
+  --wfl-mist:         #F5FAF8; /* text */
+
+  /* ---- Teal ramp (derived from Verdant/Deep Teal) ---- */
+  --wfl-teal-100: #CFF5EF;
+  --wfl-teal-200: #9EE7DC;
+  --wfl-teal-300: #5FD3C4;
+  --wfl-teal-400: #2FBFAE; /* hover / bright */
+  --wfl-teal-500: #12A594; /* = verdant teal */
+  --wfl-teal-600: #0F9184;
+  --wfl-teal-700: #0B7A6E; /* = deep teal */
+  --wfl-teal-800: #0A5F57;
+  --wfl-teal-900: #0A403B;
+
+  /* ---- Ink surface ramp (background elevations) ---- */
+  --wfl-ink-inset:   #0B1917; /* code wells, sunken */
+  --wfl-ink-base:    #10221F; /* = ink, page bg */
+  --wfl-ink-raised:  #16302B; /* cards */
+  --wfl-ink-overlay: #1D3B35; /* popovers, hover rows */
+  --wfl-ink-hover:   #234640; /* interactive hover fill */
+
+  /* ---- Amber ramp ---- */
+  --wfl-amber-300: #F8C97E;
+  --wfl-amber-400: #F2A73B; /* = warm amber */
+  --wfl-amber-500: #E0912A;
+  --wfl-amber-soft: rgba(242, 167, 59, 0.16);
+
+  /* ---- Coral (derived danger — NOT in brand spec; tuned to sit
+          beside amber warmth). Flag if a brand red is provided. ---- */
+  --wfl-coral-400: #E5674F;
+  --wfl-coral-500: #D24E37;
+  --wfl-coral-soft: rgba(229, 103, 79, 0.16);
+
+  /* ---- Mist alpha ladder (text + hairlines on Ink) ---- */
+  --wfl-mist-90: rgba(245, 250, 248, 0.90);
+  --wfl-mist-72: rgba(245, 250, 248, 0.72);
+  --wfl-mist-56: rgba(245, 250, 248, 0.56);
+  --wfl-mist-40: rgba(245, 250, 248, 0.40);
+  --wfl-mist-24: rgba(245, 250, 248, 0.24);
+  --wfl-mist-14: rgba(245, 250, 248, 0.14);
+  --wfl-mist-08: rgba(245, 250, 248, 0.08);
+  --wfl-teal-soft: rgba(18, 165, 148, 0.14);
+  --wfl-teal-glow: rgba(18, 165, 148, 0.30);
+
+  /* ============================================================
+     Semantic aliases — reference these in components
+     ============================================================ */
+  --surface-base:    var(--wfl-ink-base);
+  --surface-raised:  var(--wfl-ink-raised);
+  --surface-overlay: var(--wfl-ink-overlay);
+  --surface-inset:   var(--wfl-ink-inset);
+  --surface-hover:   var(--wfl-ink-hover);
+
+  --text-primary:   var(--wfl-mist);
+  --text-secondary: var(--wfl-mist-72);
+  --text-muted:     var(--wfl-mist-56);
+  --text-faint:     var(--wfl-mist-40);
+  --text-on-accent: var(--wfl-ink);
+
+  --border-subtle:  var(--wfl-mist-08);
+  --border-default: var(--wfl-mist-14);
+  --border-strong:  var(--wfl-mist-24);
+
+  --accent:         var(--wfl-teal-500);
+  --accent-hover:   var(--wfl-teal-400);
+  --accent-pressed: var(--wfl-teal-700);
+  --accent-soft:    var(--wfl-teal-soft);
+  --accent-glow:    var(--wfl-teal-glow);
+
+  --highlight:      var(--wfl-warm-amber);
+  --highlight-soft: var(--wfl-amber-soft);
+
+  --success: var(--wfl-teal-400);
+  --warning: var(--wfl-warm-amber);
+  --danger:  var(--wfl-coral-400);
+  --danger-soft: var(--wfl-coral-soft);
+
+  --focus-ring: var(--wfl-teal-400);
+}

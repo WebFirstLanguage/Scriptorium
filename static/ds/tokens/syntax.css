@@ -1,0 +1,22 @@
+/* ============================================================
+   WFL — Code syntax highlighting
+   Token colors for WFL source, mapped from the VS Code TextMate
+   grammar scopes onto the brand palette. Because WFL reads like
+   plain English, keywords are teal and prose-like, strings amber.
+   ============================================================ */
+:root {
+  --code-bg:       var(--wfl-ink-inset);
+  --code-text:     var(--wfl-mist-90);          /* default / identifiers */
+  --code-keyword:  var(--wfl-teal-300);          /* store, check, if, count, for... */
+  --code-storage:  var(--wfl-teal-400);          /* store, create, as, return */
+  --code-control:  var(--wfl-teal-200);          /* if, otherwise, end, loops */
+  --code-function: var(--wfl-mist);              /* action / function names */
+  --code-string:   var(--wfl-warm-amber);        /* "quoted text" */
+  --code-number:   var(--wfl-amber-300);         /* numeric + boolean literals */
+  --code-operator: var(--wfl-teal-100);          /* is, plus, greater than */
+  --code-comment:  var(--wfl-mist-40);           /* // comments */
+  --code-io:       var(--wfl-teal-300);          /* display, open, respond */
+  --code-punct:    var(--wfl-mist-56);
+  --code-linehl:   rgba(18, 165, 148, 0.10);     /* highlighted line bg */
+  --code-gutter:   var(--wfl-mist-24);
+}

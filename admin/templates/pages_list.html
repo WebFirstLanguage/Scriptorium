@@ -1,0 +1,27 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}Pages{% endblock %}
+{% block heading %}Pages{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="panel__head">
+    <h2>All pages</h2>
+    <a class="btn btn--primary" href="/admin/pages/new">New page</a>
+  </div>
+  <table class="table">
+    <thead><tr><th>Title</th><th>Slug</th><th>Status</th><th>Updated</th><th></th></tr></thead>
+    <tbody>
+    {% for page in pages %}
+      <tr>
+        <td><a href="/admin/pages/{{ page.id }}/edit">{{ page.title }}</a></td>
+        <td class="muted mono">{{ page.slug }}</td>
+        <td><span class="badge badge--{{ page.status }}">{{ page.status }}</span></td>
+        <td class="muted">{{ page.updated_at | truncate(16, '') }}</td>
+        <td class="row-actions"><a href="/admin/pages/{{ page.id }}/edit">Edit</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No pages yet. <a href="/admin/pages/new">Create one →</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

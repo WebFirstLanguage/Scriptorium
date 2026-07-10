@@ -1,0 +1,25 @@
+{% extends "themes/base/templates/layout.html" %}
+{% block content %}
+<section class="masthead">
+  <div class="masthead__glow"></div>
+  <h1 class="masthead__title">{{ site.title }}</h1>
+  <p class="masthead__tagline">{{ site.tagline }}</p>
+</section>
+<div class="post-list">
+{% for post in posts %}
+  <article class="post-card">
+    <div class="post-card__meta">{{ post.created_at | truncate(10, '') }} · {{ post.author_name | default('unknown') }}</div>
+    <h2 class="post-card__title"><a href="/post/{{ post.slug }}">{{ post.title }}</a></h2>
+    <p class="post-card__excerpt">{{ post.body_markdown | markdown | striptags | truncate(180) }}</p>
+  </article>
+{% else %}
+  <p class="empty">No posts yet.{% if site.is_admin %} <a href="/admin/posts/new">Write the first one →</a>{% endif %}</p>
+{% endfor %}
+</div>
+{% if pagination.has_prev or pagination.has_more %}
+<nav class="pager">
+  {% if pagination.has_prev %}<a class="btn btn--ghost" href="{{ pagination.prev_url }}">← Newer</a>{% endif %}
+  {% if pagination.has_more %}<a class="btn btn--ghost" href="{{ pagination.next_url }}">Older →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

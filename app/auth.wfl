@@ -1,0 +1,101 @@
+// Scriptorium — authentication, sessions, and role checks.
+//
+// Passwords use WFL's Argon2id-backed hash_password / verify_password. Sessions
+// are our own: a random id in an HttpOnly cookie, backed by the `sessions` table,
+// with server-side expiry checked in SQL. There is no session support in the WFL
+// web server itself, so this file is where that lives.
+//
+// Dependency chain:  auth -> db -> util
+include from "db.wfl"
+
+// A fresh, unguessable session id (64 hex chars from a CSPRNG).
+define action called new_session_id:
+    return secure_random_bytes of 32
+end action
+
+// Verify a username/password pair. Returns the user row on success, else nothing.
+define action called login_check with parameters conn and username and plaintext:
+    store user_row as user_by_username of conn and username
+    check if user_row is nothing:
+        return nothing
+    end check
+    store ok as verify_password of plaintext and user_row["password_hash"]
+    check if ok is equal to yes:
+        return user_row
+    end check
+    return nothing
+end action
+
+// Start a session for a user and return the new session id.
+// Expiry (7 days) is computed in SQL so we don't depend on WFL date formatting.
+define action called session_start with parameters conn and user_id:
+    store sid as new_session_id
+    store exp_rows as query conn with "SELECT datetime('now', '+7 days') AS exp"
+    store exp_row as exp_rows[0]
+    store expires_at as exp_row["exp"]
+    store created as session_create of conn and sid and user_id and expires_at
+    return sid
+end action
+
+// Extract the session id from a Cookie header string ("" when absent).
+// The raw Cookie header must be read in the main request loop (the `header`
+// expression only works there) and passed in.
+define action called sid_from_cookie with parameters cookie_header:
+    check if cookie_header is nothing:
+        return ""
+    end check
+    store cookies as parse_cookies of cookie_header
+    return field_or of cookies and "sid" and ""
+end action
+
+// Resolve the logged-in user (or nothing) from a Cookie header string.
+define action called current_user with parameters conn and cookie_header:
+    store sid as sid_from_cookie of cookie_header
+    check if sid is equal to "":
+        return nothing
+    end check
+    return session_user of conn and sid
+end action
+
+// Log a session out (deletes the server-side row). Takes the Cookie header.
+define action called logout_by_cookie with parameters conn and cookie_header:
+    store sid as sid_from_cookie of cookie_header
+    check if sid is equal to "":
+        return no
+    end check
+    store gone as session_delete of conn and sid
+    return yes
+end action
+
+// ---- Role helpers ---------------------------------------------------------
+
+define action called is_admin with parameters user:
+    check if user is nothing:
+        return no
+    end check
+    check if user["role"] is equal to "admin":
+        return yes
+    end check
+    return no
+end action
+
+// Can this user edit content owned by author_id? Admins can edit anything;
+// authors can edit only their own.
+define action called can_edit with parameters user and author_id:
+    check if user is nothing:
+        return no
+    end check
+    check if is_admin of user:
+        return yes
+    end check
+    check if user["id"] is equal to author_id:
+        return yes
+    end check
+    return no
+end action
+
+// ---- Cookie header values -------------------------------------------------
+
+define action called session_cookie with parameters sid:
+    return "sid=" with sid with "; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800"
+end action

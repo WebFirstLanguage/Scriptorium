@@ -1,0 +1,37 @@
+// Scriptorium — the rendering layer.
+//
+// Wraps Scribe (the vendored Twig-style engine) and centralises where template
+// files live. Handlers build a small context map and call render_public /
+// render_admin; this file injects the shared "site" context (title, nav, the
+// current user) so every template can rely on it.
+//
+// Dependency graph:  render -> auth -> db -> util   and   render -> lib/scribe
+include from "auth.wfl"
+include from "../lib/scribe.wfl"
+
+// Shared site context, present on every page as `site`.
+define action called site_context with parameters conn and user:
+    store nav_pages as page_list_published of conn
+    store yr_rows as query conn with "SELECT strftime('%Y','now') AS y"
+    store yr_row as yr_rows[0]
+    create map site_map:
+        "title" is setting_get of conn and "site_title" and "Scriptorium"
+        "tagline" is setting_get of conn and "site_tagline" and "Words, well kept."
+        "nav" is nav_pages
+        "user" is user
+        "is_admin" is is_admin of user
+        "asset_base" is "/assets"
+        "year" is yr_row["y"]
+    end map
+    return site_map
+end action
+
+// Render a public theme template (path relative to the repo root / CWD).
+define action called render_public with parameters template_name and ctx:
+    return scribe_render_file of ("themes/base/templates/" with template_name) and ctx
+end action
+
+// Render an admin-panel template.
+define action called render_admin with parameters template_name and ctx:
+    return scribe_render_file of ("admin/templates/" with template_name) and ctx
+end action

@@ -1,0 +1,212 @@
+// Scriptorium — data layer.
+//
+// Owns the SQLite schema and every query/execute the app makes. Callers pass in
+// the open connection handle (`conn`) so this file stays free of global state and
+// is easy to unit-test against `sqlite::memory:`.
+//
+// Timestamps are filled by SQLite itself (DEFAULT (datetime('now')) and explicit
+// datetime('now') in updates) so we never depend on WFL date formatting.
+//
+// Dependency chain:  db -> util
+include from "util.wfl"
+
+// ---------------------------------------------------------------------------
+// Schema — idempotent. Safe to run on every boot (no migration engine in WFL).
+// ---------------------------------------------------------------------------
+define action called db_migrate with parameters conn:
+    store r1 as execute conn with "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at TEXT DEFAULT (datetime('now')))"
+    store r2 as execute conn with "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+    store r3 as execute conn with "CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+    store r4 as execute conn with "CREATE TABLE IF NOT EXISTS pages (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
+    store r5 as execute conn with "CREATE TABLE IF NOT EXISTS settings (skey TEXT PRIMARY KEY, svalue TEXT NOT NULL DEFAULT '')"
+    return yes
+end action
+
+// first_row: return row 0 of a result list, or nothing when empty.
+define action called first_row with parameters rows:
+    check if (length of rows) is greater than 0:
+        return rows[0]
+    end check
+    return nothing
+end action
+
+// ---------------------------------------------------------------------------
+// Settings — a simple key/value store.
+// ---------------------------------------------------------------------------
+define action called setting_get with parameters conn and setting_key and fallback:
+    store rows as query conn with "SELECT svalue FROM settings WHERE skey = ?" and parameters [setting_key]
+    store row0 as first_row of rows
+    check if row0 is nothing:
+        return fallback
+    end check
+    return row0["svalue"]
+end action
+
+define action called setting_set with parameters conn and setting_key and setting_value:
+    store r as execute conn with "INSERT INTO settings (skey, svalue) VALUES (?, ?) ON CONFLICT(skey) DO UPDATE SET svalue = ?" and parameters [setting_key and setting_value and setting_value]
+    return yes
+end action
+
+// Insert a default only if the key is absent (used at seed time).
+define action called setting_default with parameters conn and setting_key and setting_value:
+    store r as execute conn with "INSERT OR IGNORE INTO settings (skey, svalue) VALUES (?, ?)" and parameters [setting_key and setting_value]
+    return yes
+end action
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+define action called user_count with parameters conn:
+    store rows as query conn with "SELECT count(*) AS n FROM users"
+    store row0 as rows[0]
+    return row0["n"]
+end action
+
+define action called user_create with parameters conn and username and password_hash and role_name:
+    return execute conn with "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)" and parameters [username and password_hash and role_name]
+end action
+
+define action called user_by_username with parameters conn and username:
+    store rows as query conn with "SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?" and parameters [username]
+    return first_row of rows
+end action
+
+define action called user_by_id with parameters conn and the_id:
+    store rows as query conn with "SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?" and parameters [the_id]
+    return first_row of rows
+end action
+
+define action called user_list with parameters conn:
+    return query conn with "SELECT id, username, role, created_at FROM users ORDER BY id"
+end action
+
+define action called user_set_role with parameters conn and the_id and role_name:
+    return execute conn with "UPDATE users SET role = ? WHERE id = ?" and parameters [role_name and the_id]
+end action
+
+define action called user_set_password with parameters conn and the_id and password_hash:
+    return execute conn with "UPDATE users SET password_hash = ? WHERE id = ?" and parameters [password_hash and the_id]
+end action
+
+define action called user_delete with parameters conn and the_id:
+    return execute conn with "DELETE FROM users WHERE id = ?" and parameters [the_id]
+end action
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+define action called session_create with parameters conn and session_id and user_id and expires_at:
+    return execute conn with "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)" and parameters [session_id and user_id and expires_at]
+end action
+
+// Returns the joined user row for a live (non-expired) session, or nothing.
+define action called session_user with parameters conn and session_id:
+    store rows as query conn with "SELECT u.id AS id, u.username AS username, u.role AS role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > datetime('now')" and parameters [session_id]
+    return first_row of rows
+end action
+
+define action called session_delete with parameters conn and session_id:
+    return execute conn with "DELETE FROM sessions WHERE id = ?" and parameters [session_id]
+end action
+
+define action called session_purge_expired with parameters conn:
+    return execute conn with "DELETE FROM sessions WHERE expires_at <= datetime('now')"
+end action
+
+// ---------------------------------------------------------------------------
+// Posts
+// ---------------------------------------------------------------------------
+define action called post_create with parameters conn and slug and title and body_markdown and the_status and author_id:
+    return execute conn with "INSERT INTO posts (slug, title, body_markdown, status, author_id) VALUES (?, ?, ?, ?, ?)" and parameters [slug and title and body_markdown and the_status and author_id]
+end action
+
+define action called post_update with parameters conn and the_id and slug and title and body_markdown and the_status:
+    return execute conn with "UPDATE posts SET slug = ?, title = ?, body_markdown = ?, status = ?, updated_at = datetime('now') WHERE id = ?" and parameters [slug and title and body_markdown and the_status and the_id]
+end action
+
+define action called post_delete with parameters conn and the_id:
+    return execute conn with "DELETE FROM posts WHERE id = ?" and parameters [the_id]
+end action
+
+define action called post_by_id with parameters conn and the_id:
+    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.author_id AS author_id, p.created_at AS created_at, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.id = ?" and parameters [the_id]
+    return first_row of rows
+end action
+
+define action called post_by_slug with parameters conn and slug:
+    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.author_id AS author_id, p.created_at AS created_at, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.slug = ?" and parameters [slug]
+    return first_row of rows
+end action
+
+// Published posts, newest first, one page at a time.
+define action called post_list_published with parameters conn and page_limit and page_offset:
+    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.created_at AS created_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.status = 'published' ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?" and parameters [page_limit and page_offset]
+end action
+
+define action called post_count_published with parameters conn:
+    store rows as query conn with "SELECT count(*) AS n FROM posts WHERE status = 'published'"
+    store row0 as rows[0]
+    return row0["n"]
+end action
+
+// All posts for the admin list (optionally scoped to one author).
+define action called post_list_all with parameters conn:
+    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id ORDER BY p.updated_at DESC, p.id DESC"
+end action
+
+define action called post_list_by_author with parameters conn and author_id:
+    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.author_id = ? ORDER BY p.updated_at DESC, p.id DESC" and parameters [author_id]
+end action
+
+// ---------------------------------------------------------------------------
+// Pages
+// ---------------------------------------------------------------------------
+define action called page_create with parameters conn and slug and title and body_markdown and the_status and author_id:
+    return execute conn with "INSERT INTO pages (slug, title, body_markdown, status, author_id) VALUES (?, ?, ?, ?, ?)" and parameters [slug and title and body_markdown and the_status and author_id]
+end action
+
+define action called page_update with parameters conn and the_id and slug and title and body_markdown and the_status:
+    return execute conn with "UPDATE pages SET slug = ?, title = ?, body_markdown = ?, status = ?, updated_at = datetime('now') WHERE id = ?" and parameters [slug and title and body_markdown and the_status and the_id]
+end action
+
+define action called page_delete with parameters conn and the_id:
+    return execute conn with "DELETE FROM pages WHERE id = ?" and parameters [the_id]
+end action
+
+define action called page_by_id with parameters conn and the_id:
+    store rows as query conn with "SELECT id, slug, title, body_markdown, status, author_id, updated_at FROM pages WHERE id = ?" and parameters [the_id]
+    return first_row of rows
+end action
+
+define action called page_by_slug with parameters conn and slug:
+    store rows as query conn with "SELECT id, slug, title, body_markdown, status, author_id, updated_at FROM pages WHERE slug = ? AND status = 'published'" and parameters [slug]
+    return first_row of rows
+end action
+
+define action called page_list_all with parameters conn:
+    return query conn with "SELECT id, slug, title, status, updated_at FROM pages ORDER BY title"
+end action
+
+define action called page_list_by_author with parameters conn and author_id:
+    return query conn with "SELECT id, slug, title, status, updated_at FROM pages WHERE author_id = ? ORDER BY title" and parameters [author_id]
+end action
+
+// Published pages, for the site nav.
+define action called page_list_published with parameters conn:
+    return query conn with "SELECT id, slug, title FROM pages WHERE status = 'published' ORDER BY title"
+end action
+
+// ---------------------------------------------------------------------------
+// Counts (dashboard)
+// ---------------------------------------------------------------------------
+define action called posts_total with parameters conn:
+    store rows as query conn with "SELECT count(*) AS n FROM posts"
+    store row0 as rows[0]
+    return row0["n"]
+end action
+
+define action called pages_total with parameters conn:
+    store rows as query conn with "SELECT count(*) AS n FROM pages"
+    store row0 as rows[0]
+    return row0["n"]
+end action
