@@ -3,6 +3,7 @@
 {% block heading %}Settings{% endblock %}
 {% block content %}
 <form method="post" action="/admin/settings" class="form form--wide">
+  <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
   <label class="field">
     <span>Site title</span>
     <input name="site_title" value="{{ settings.site_title }}" required>

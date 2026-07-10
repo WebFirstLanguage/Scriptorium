@@ -3,6 +3,7 @@
 {% block heading %}{{ form_title }}{% endblock %}
 {% block content %}
 <form method="post" action="{{ action_url }}" class="form form--wide">
+  <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
   <label class="field">
     <span>Title</span>
     <input name="title" value="{{ page.title }}" required autofocus>
@@ -29,7 +30,23 @@
 </form>
 {% if page.id %}
 <form method="post" action="/admin/pages/{{ page.id }}/delete" class="form--danger" onsubmit="return confirm('Delete this page permanently?')">
+  <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
   <button class="btn btn--danger" type="submit">Delete page</button>
 </form>
 {% endif %}
+<section class="panel">
+  <div class="panel__head">
+    <h2>Media</h2>
+  </div>
+  <p class="hint">Upload an image here, then reference it in the body as
+  <code>![alt text](/assets/uploads/&hellip;)</code> &mdash; the upload opens the
+  <a href="/admin/media" target="_blank">media library</a> in a new tab, so your draft above stays put.</p>
+  <form method="post" action="/admin/media/upload" enctype="multipart/form-data" target="_blank" class="form">
+    <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
+    <div class="field field--inline">
+      <input type="file" name="file" accept=".png,.jpg,.jpeg,.gif,.webp" required>
+      <button class="btn btn--ghost" type="submit">Upload</button>
+    </div>
+  </form>
+</section>
 {% endblock %}

@@ -88,6 +88,36 @@ define action called to_int with parameters raw_text and fallback:
     return result_num
 end action
 
+// file_ext: the lowercased extension of a file name, without the dot.
+//   "photo.PNG" -> "png"    "no-extension" -> ""    ".hidden" -> ""
+// A dot at position 0 (dotfile) or at the very end does not count as one.
+define action called file_ext with parameters file_name:
+    store dot_pos as last_index_of of file_name and "."
+    check if dot_pos is less than 1:
+        return ""
+    end check
+    store name_len as length of file_name
+    check if dot_pos is equal to name_len minus 1:
+        return ""
+    end check
+    store raw_ext as substring of file_name and dot_pos plus 1 and (name_len minus dot_pos minus 1)
+    return tolowercase of raw_ext
+end action
+
+// file_stem: the file name before its extension (before the last dot).
+//   "photo.PNG" -> "photo"    ".hidden" -> ".hidden"
+define action called file_stem with parameters file_name:
+    store dot_pos as last_index_of of file_name and "."
+    check if dot_pos is less than 1:
+        return file_name
+    end check
+    store name_len as length of file_name
+    check if dot_pos is equal to name_len minus 1:
+        return file_name
+    end check
+    return substring of file_name and 0 and dot_pos
+end action
+
 // truncate_text: cut a string to at most max_len characters, adding an ellipsis.
 define action called truncate_text with parameters source_text and max_len:
     store source_len as length of source_text

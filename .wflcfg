@@ -13,3 +13,7 @@ web_server_bind_address = 127.0.0.1
 # start with a `listen ... secured` port (see docs/ARCHITECTURE.md).
 # web_server_tls_cert_file = /etc/scriptorium/tls/cert.pem
 # web_server_tls_key_file  = /etc/scriptorium/tls/key.pem
+
+# Request body cap (bytes). The default is 1 MiB; media uploads need more.
+# 10 MiB is a sensible ceiling for images pasted into posts.
+web_server_max_body_size = 10485760

@@ -16,3 +16,7 @@ node_modules/
 
 # OS noise
 .DS_Store
+
+# Uploaded media (runtime)
+static/uploads/*
+!static/uploads/.gitkeep

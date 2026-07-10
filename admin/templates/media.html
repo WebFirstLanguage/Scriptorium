@@ -1,0 +1,53 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}Media{% endblock %}
+{% block heading %}Media{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="panel__head">
+    <h2>Upload an image</h2>
+  </div>
+  <form method="post" action="/admin/media/upload" enctype="multipart/form-data" class="form">
+    <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
+    <label class="field">
+      <span>Image <em class="hint">png, jpg, jpeg, gif, or webp</em></span>
+      <input type="file" name="file" accept=".png,.jpg,.jpeg,.gif,.webp" required>
+    </label>
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit">Upload</button>
+    </div>
+  </form>
+</div>
+<div class="panel">
+  <div class="panel__head">
+    <h2>Library</h2>
+  </div>
+  <p class="hint">Reference an upload from a post or page with the Markdown snippet in its row.</p>
+  <table class="table">
+    <thead><tr><th>Preview</th><th>File</th><th>Markdown</th><th>Size</th><th>Uploaded by</th><th></th></tr></thead>
+    <tbody>
+    {% for item in media %}
+      <tr>
+        <td><a href="{{ item.url }}" target="_blank"><img src="{{ item.url }}" alt="{{ item.original_name }}" style="max-width:72px;max-height:48px;border-radius:6px"></a></td>
+        <td>
+          <a href="{{ item.url }}" target="_blank" class="mono">{{ item.filename }}</a>
+          <div class="muted">{{ item.original_name }} · {{ item.created_at | truncate(16, '') }}</div>
+        </td>
+        <td><code class="mono">![{{ item.original_name }}]({{ item.url }})</code></td>
+        <td class="muted">{{ item.size_kb }} KB</td>
+        <td>{{ item.uploader_name | default('—') }}</td>
+        <td class="row-actions">
+          {% if item.can_delete %}
+          <form method="post" action="/admin/media/{{ item.id }}/delete" class="inline" onsubmit="return confirm('Delete this file permanently?')">
+            <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
+            <button class="btn btn--ghost" type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nothing uploaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

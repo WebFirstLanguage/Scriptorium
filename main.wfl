@@ -54,8 +54,22 @@ define action called send_redirect_cookie with parameters req and location and c
     return yes
 end action
 
+// Send HTML and set a cookie in the same response (the login form's CSRF cookie).
+define action called send_html_cookie with parameters req and body_html and cookie_value:
+    create map extra_headers:
+        "Set-Cookie" is cookie_value
+    end map
+    respond to req with body_html and content_type "text/html" and headers extra_headers
+    return yes
+end action
+
 define action called send_forbidden with parameters req:
     respond to req with "403 — you don't have access to that." and status 403 and content_type "text/plain"
+    return yes
+end action
+
+define action called send_csrf_rejected with parameters req:
+    respond to req with "403 — invalid or missing CSRF token. Go back, reload the page, and try again." and status 403 and content_type "text/plain"
     return yes
 end action
 
@@ -210,19 +224,28 @@ end action
 
 // ---------------------------------------------------------------------------
 // Admin — authentication
+//
+// The login form is protected with a double-submit CSRF cookie (there is no
+// session yet to bind a token to): rendering the form mints a random token,
+// sets it as a short-lived cookie, and embeds it as a hidden field; the POST
+// must present both, matching, compared in constant time. After login, every
+// admin form instead carries the session-bound token (site.csrf / csrf_ok).
 // ---------------------------------------------------------------------------
 define action called render_login with parameters db and req and form_username and flash_msg:
     store site_map as site_context of db and nothing
+    store login_tok as generate_csrf_token
     create map login_form:
         "username" is form_username
     end map
     create map ctx:
         "site" is site_map
         "form" is login_form
+        "csrf" is login_tok
         "flash" is make_flash of "error" and flash_msg
     end map
     store html as render_admin of "login.html" and ctx
-    call send_html with req and html
+    store csrf_cookie as "csrf=" with login_tok with "; HttpOnly; Path=/admin/login; SameSite=Lax; Max-Age=600"
+    call send_html_cookie with req and html and csrf_cookie
     return yes
 end action
 
@@ -235,15 +258,44 @@ define action called handle_login_form with parameters db and req and user:
     return yes
 end action
 
-define action called handle_login_post with parameters db and req and req_body:
+// Extract the pre-login CSRF token from the Cookie header ("" when absent).
+define action called login_csrf_from_cookie with parameters cookie_header:
+    check if cookie_header is nothing:
+        return ""
+    end check
+    store cookies as parse_cookies of cookie_header
+    return field_or of cookies and "csrf" and ""
+end action
+
+define action called handle_login_post with parameters db and req and req_body and cookie_hdr and req_ip:
+    // Rate limit: after 10 failed attempts from one address in 15 minutes,
+    // stop checking credentials at all until the window moves on.
+    store recent_failures as login_attempts_recent of db and req_ip
+    check if recent_failures is greater than or equal to 10:
+        call send_text_status with req and "429 — too many login attempts from your address. Wait 15 minutes and try again." and 429
+        return yes
+    end check
     store f as parse_form_urlencoded of req_body
+    // Double-submit CSRF check (cookie token vs form token, constant time).
+    store cookie_tok as login_csrf_from_cookie of cookie_hdr
+    store form_tok as field_or of f and "csrf_token" and ""
+    store csrf_valid as no
+    check if (cookie_tok is not equal to "") and (form_tok is not equal to ""):
+        change csrf_valid to constant_time_equals of cookie_tok and form_tok
+    end check
+    check if csrf_valid is not equal to yes:
+        call render_login with db and req and "" and "That form had expired — please sign in again."
+        return yes
+    end check
     store username as field_or of f and "username" and ""
     store password as field_or of f and "password" and ""
     store user as login_check of db and username and password
     check if user is nothing:
+        store recorded as login_attempt_record of db and req_ip
         call render_login with db and req and username and "Wrong username or password."
         return yes
     end check
+    store cleared as login_attempts_clear of db and req_ip
     store sid as session_start of db and user["id"]
     call send_redirect_cookie with req and "/admin" and (session_cookie of sid)
     return yes
@@ -743,6 +795,128 @@ define action called dispatch_users with parameters db and req and req_method an
 end action
 
 // ---------------------------------------------------------------------------
+// Admin — media library (uploads live under static/uploads/, so they are
+// served by the existing /assets/* route as /assets/uploads/<filename>).
+// ---------------------------------------------------------------------------
+define action called handle_media_list with parameters db and req and user and flash_msg:
+    store site_map as site_context of db and user
+    store rows as media_list_all of db
+    store items as []
+    for each media_row in rows:
+        create map item:
+            "id" is media_row["id"]
+            "filename" is media_row["filename"]
+            "original_name" is media_row["original_name"]
+            "content_type" is media_row["content_type"]
+            "size_kb" is round of (media_row["size"] divided by 1024)
+            "url" is "/assets/uploads/" with media_row["filename"]
+            "uploader_name" is media_row["uploader_name"]
+            "created_at" is media_row["created_at"]
+            "can_delete" is can_edit of user and media_row["uploader_id"]
+        end map
+        push with items and item
+    end for
+    create map ctx:
+        "site" is site_map
+        "media" is items
+        "flash" is make_flash of "error" and flash_msg
+    end map
+    store html as render_admin of "media.html" and ctx
+    call send_html with req and html
+    return yes
+end action
+
+// POST /admin/media/upload — a multipart/form-data body (the one admin form
+// that is not form-urlencoded, so it validates its CSRF part itself).
+define action called handle_media_upload with parameters db and req and user:
+    store upload_content_type as header "Content-Type" of req
+    store raw_bytes as body_bytes of req
+    store parts as []
+    store parse_failed as no
+    try:
+        change parts to parse_multipart of raw_bytes and upload_content_type
+    when error:
+        change parse_failed to yes
+    end try
+    check if parse_failed is equal to yes:
+        call handle_media_list with db and req and user and "That didn't look like a file upload — try again."
+        return yes
+    end check
+    store submitted_tok as ""
+    store file_part as nothing
+    for each part in parts:
+        store part_name as field_or of part and "name" and ""
+        check if part_name is equal to "csrf_token":
+            change submitted_tok to field_or of part and "content" and ""
+        end check
+        check if part_name is equal to "file":
+            change file_part to part
+        end check
+    end for
+    check if (csrf_ok of user and submitted_tok) is not equal to yes:
+        call send_csrf_rejected with req
+        return yes
+    end check
+    check if file_part is nothing:
+        call handle_media_list with db and req and user and "Choose a file to upload."
+        return yes
+    end check
+    store orig_name as field_or of file_part and "filename" and ""
+    check if orig_name is equal to "":
+        call handle_media_list with db and req and user and "Choose a file to upload."
+        return yes
+    end check
+    store ext as file_ext of orig_name
+    store ext_ok as no
+    check if (ext is equal to "png") or (ext is equal to "jpg") or (ext is equal to "jpeg") or (ext is equal to "gif") or (ext is equal to "webp"):
+        change ext_ok to yes
+    end check
+    check if ext_ok is equal to no:
+        call handle_media_list with db and req and user and "Only png, jpg, jpeg, gif, and webp images can be uploaded."
+        return yes
+    end check
+    store file_bytes as file_part["content_bytes"]
+    check if (length of file_bytes) is equal to 0:
+        call handle_media_list with db and req and user and "That file was empty."
+        return yes
+    end check
+    // Stored name: slug of the original name + random suffix, so uploads never
+    // collide and never carry a path or unexpected characters.
+    store base_name as slugify of (file_stem of orig_name)
+    check if base_name is equal to "":
+        change base_name to "upload"
+    end check
+    store stored_name as base_name with "-" with (secure_random_bytes of 4) with "." with ext
+    store stored_path as "static/uploads/" with stored_name
+    open file at stored_path for writing binary as upload_file
+    write binary file_bytes into upload_file
+    close file upload_file
+    store created as media_create of db and stored_name and orig_name and (mime_type of stored_name) and (length of file_bytes) and user["id"]
+    call send_redirect with req and "/admin/media"
+    return yes
+end action
+
+define action called handle_media_delete with parameters db and req and user and id_text:
+    store the_id as to_int of id_text and 0
+    store media_row as media_by_id of db and the_id
+    check if media_row is nothing:
+        call handle_404 with db and req and user
+        return yes
+    end check
+    check if (can_edit of user and media_row["uploader_id"]) is equal to yes:
+        store stored_path as "static/uploads/" with media_row["filename"]
+        check if file exists at stored_path:
+            delete file at stored_path
+        end check
+        store del as media_delete of db and the_id
+        call send_redirect with req and "/admin/media"
+    otherwise:
+        call send_forbidden with req
+    end check
+    return yes
+end action
+
+// ---------------------------------------------------------------------------
 // Admin — settings (admin only)
 // ---------------------------------------------------------------------------
 define action called handle_settings with parameters db and req and user:
@@ -775,20 +949,17 @@ define action called handle_settings_save with parameters db and req and req_bod
 end action
 
 // ---------------------------------------------------------------------------
-// Admin dispatch — auth gate + role gate + route table
+// Admin dispatch — auth gate + CSRF gate + role gate + route table
 // ---------------------------------------------------------------------------
-define action called dispatch_admin with parameters db and req and req_method and req_path and req_body and cookie_hdr and user:
-    // Unauthenticated admin routes.
+define action called dispatch_admin with parameters db and req and req_method and req_path and req_body and cookie_hdr and req_ip and user:
+    // The one admin route that works without a session (it carries its own
+    // double-submit CSRF cookie and the login rate limiter).
     check if req_path is equal to "/admin/login":
         check if req_method is equal to "POST":
-            call handle_login_post with db and req and req_body
+            call handle_login_post with db and req and req_body and cookie_hdr and req_ip
         otherwise:
             call handle_login_form with db and req and user
         end check
-        return yes
-    end check
-    check if req_path is equal to "/admin/logout":
-        call handle_logout with db and req and cookie_hdr
         return yes
     end check
     // Everything below requires a logged-in user.
@@ -796,8 +967,49 @@ define action called dispatch_admin with parameters db and req and req_method an
         call send_redirect with req and "/admin/login"
         return yes
     end check
+    // CSRF gate: every mutating (POST) admin request must echo the session's
+    // token. The multipart upload route carries its token as a form part and
+    // validates it in its handler; every other admin form is form-urlencoded.
+    check if req_method is equal to "POST":
+        check if req_path is not equal to "/admin/media/upload":
+            store gate_form as parse_form_urlencoded of req_body
+            store gate_tok as field_or of gate_form and "csrf_token" and ""
+            check if (csrf_ok of user and gate_tok) is not equal to yes:
+                call send_csrf_rejected with req
+                return yes
+            end check
+        end check
+    end check
+    // Logout is POST-only (a GET must not end the session), and sits behind
+    // the CSRF gate above like every other mutation.
+    check if req_path is equal to "/admin/logout":
+        check if req_method is equal to "POST":
+            call handle_logout with db and req and cookie_hdr
+        otherwise:
+            call send_redirect with req and "/admin"
+        end check
+        return yes
+    end check
     check if req_path is equal to "/admin":
         call handle_dashboard with db and req and user
+        return yes
+    end check
+    // Media library (any signed-in user)
+    check if req_path is equal to "/admin/media":
+        call handle_media_list with db and req and user and ""
+        return yes
+    end check
+    check if req_path is equal to "/admin/media/upload":
+        check if req_method is equal to "POST":
+            call handle_media_upload with db and req and user
+        otherwise:
+            call send_redirect with req and "/admin/media"
+        end check
+        return yes
+    end check
+    store mdel as path_params of req_path and "/admin/media/:id/delete"
+    check if mdel is not nothing:
+        call handle_media_delete with db and req and user and mdel["id"]
         return yes
     end check
     // Posts
@@ -885,15 +1097,15 @@ end action
 // ---------------------------------------------------------------------------
 // Top-level dispatch
 // ---------------------------------------------------------------------------
-define action called dispatch with parameters db and req and req_method and req_path and req_body and cookie_hdr:
+define action called dispatch with parameters db and req and req_method and req_path and req_body and cookie_hdr and req_ip:
     store user as current_user of db and cookie_hdr
     route req_path:
         when starts with "/assets/":
             call serve_asset with req and req_path
         when "/admin":
-            call dispatch_admin with db and req and req_method and req_path and req_body and cookie_hdr and user
+            call dispatch_admin with db and req and req_method and req_path and req_body and cookie_hdr and req_ip and user
         when starts with "/admin/":
-            call dispatch_admin with db and req and req_method and req_path and req_body and cookie_hdr and user
+            call dispatch_admin with db and req and req_method and req_path and req_body and cookie_hdr and req_ip and user
         otherwise:
             call dispatch_public with db and req and req_path and user
     end route
@@ -922,8 +1134,16 @@ check if existing_users is equal to 0:
     display "=================================================="
 end check
 
-// Housekeeping: drop any sessions that have already expired.
+// Housekeeping: drop expired sessions and stale login-attempt records.
 store purged as session_purge_expired of db
+store purged_attempts as login_attempts_purge of db
+
+// Media uploads are written under static/, so /assets/uploads/* serves them.
+check if directory exists at "static/uploads":
+    store uploads_ready as yes
+otherwise:
+    create directory at "static/uploads"
+end check
 
 listen on port 8080 as web_server
 display "Scriptorium is running at http://127.0.0.1:8080  (admin: /admin)"
@@ -933,9 +1153,10 @@ main loop:
     store req_method as method
     store req_path as path
     store req_body as body
+    store req_ip as client_ip
     store cookie_hdr as header "Cookie" of req
     try:
-        store handled as dispatch of db and req and req_method and req_path and req_body and cookie_hdr
+        store handled as dispatch of db and req and req_method and req_path and req_body and cookie_hdr and req_ip
     when error:
         display "Request error on " with req_path with " : " with error_message
         try:

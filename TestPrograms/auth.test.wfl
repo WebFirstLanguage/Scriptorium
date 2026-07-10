@@ -1,0 +1,42 @@
+// Auth-layer tests. Run from the repo root:
+//   wfl --test TestPrograms/auth.test.wfl
+include from "../app/auth.wfl"
+
+describe "Scriptorium auth":
+
+    test "csrf_ok accepts only the session's own token":
+        create map session_user_map:
+            "id" is 1
+            "csrf_token" is "tok-123"
+        end map
+        expect csrf_ok of session_user_map and "tok-123" to equal yes
+        expect csrf_ok of session_user_map and "tok-999" to equal no
+        expect csrf_ok of session_user_map and "" to equal no
+        expect csrf_ok of session_user_map and nothing to equal no
+        expect csrf_ok of nothing and "tok-123" to equal no
+    end test
+
+    test "csrf_ok rejects a session that has no token":
+        create map bare_user:
+            "id" is 1
+            "csrf_token" is ""
+        end map
+        expect csrf_ok of bare_user and "anything" to equal no
+    end test
+
+    test "session_start binds a fresh csrf token that session_user returns":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store sid as session_start of conn and 1
+        store who as session_user of conn and sid
+        expect who["username"] to equal "ada"
+        store tok as who["csrf_token"]
+        check if tok is equal to "":
+            expect "token" to equal "must not be empty"
+        end check
+        expect length of tok to equal 64
+        close database conn
+    end test
+
+end describe
