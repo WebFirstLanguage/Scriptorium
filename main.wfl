@@ -782,12 +782,20 @@ define action called dispatch_users with parameters db and req and req_method an
     end check
     store ud as path_params of req_path and "/admin/users/:id/delete"
     check if ud is not nothing:
-        call handle_user_delete with db and req and user and ud["id"]
+        check if req_method is equal to "POST":
+            call handle_user_delete with db and req and user and ud["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     store uu as path_params of req_path and "/admin/users/:id"
     check if uu is not nothing:
-        call handle_user_update with db and req and req_body and user and uu["id"]
+        check if req_method is equal to "POST":
+            call handle_user_update with db and req and req_body and user and uu["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     call send_text_status with req and "Not found" and 404
@@ -970,6 +978,8 @@ define action called dispatch_admin with parameters db and req and req_method an
     // CSRF gate: every mutating (POST) admin request must echo the session's
     // token. The multipart upload route carries its token as a form part and
     // validates it in its handler; every other admin form is form-urlencoded.
+    // This gate only sees POSTs, so every mutating route below must be
+    // POST-only (non-POST -> 405) or a plain GET would slip past it.
     check if req_method is equal to "POST":
         check if req_path is not equal to "/admin/media/upload":
             store gate_form as parse_form_urlencoded of req_body
@@ -1009,7 +1019,11 @@ define action called dispatch_admin with parameters db and req and req_method an
     end check
     store mdel as path_params of req_path and "/admin/media/:id/delete"
     check if mdel is not nothing:
-        call handle_media_delete with db and req and user and mdel["id"]
+        check if req_method is equal to "POST":
+            call handle_media_delete with db and req and user and mdel["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     // Posts
@@ -1032,12 +1046,20 @@ define action called dispatch_admin with parameters db and req and req_method an
     end check
     store pdd as path_params of req_path and "/admin/posts/:id/delete"
     check if pdd is not nothing:
-        call handle_post_delete with db and req and user and pdd["id"]
+        check if req_method is equal to "POST":
+            call handle_post_delete with db and req and user and pdd["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     store pu as path_params of req_path and "/admin/posts/:id"
     check if pu is not nothing:
-        call handle_post_update with db and req and req_body and user and pu["id"]
+        check if req_method is equal to "POST":
+            call handle_post_update with db and req and req_body and user and pu["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     // Pages
@@ -1060,12 +1082,20 @@ define action called dispatch_admin with parameters db and req and req_method an
     end check
     store gd as path_params of req_path and "/admin/pages/:id/delete"
     check if gd is not nothing:
-        call handle_page_delete with db and req and user and gd["id"]
+        check if req_method is equal to "POST":
+            call handle_page_delete with db and req and user and gd["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     store gu as path_params of req_path and "/admin/pages/:id"
     check if gu is not nothing:
-        call handle_page_update with db and req and req_body and user and gu["id"]
+        check if req_method is equal to "POST":
+            call handle_page_update with db and req and req_body and user and gu["id"]
+        otherwise:
+            call send_text_status with req and "Method not allowed" and 405
+        end check
         return yes
     end check
     // Users (admin only)

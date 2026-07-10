@@ -115,7 +115,10 @@ noted inline:
   login form has no session yet, so it uses a **double-submit cookie**: the
   rendered form mints a token, sets it as a short-lived `csrf` cookie and
   embeds it as the hidden field; the POST must present both, matching.
-  Logout is POST-only (a GET cannot end a session) and sits behind the gate.
+  Because the gate only inspects POSTs, every mutating route — updates,
+  deletes, logout — is POST-only and answers anything else with 405;
+  otherwise a plain GET (a prefetcher, a crawler, an `<img src=…>`) would
+  bypass the token check entirely.
 - **Login rate limiting.** Failed logins are recorded per client IP in
   `login_attempts` (timestamps are SQL-side, like everything else). More than
   10 failures from one address inside 15 minutes → `429` for that address,
