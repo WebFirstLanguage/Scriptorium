@@ -1,0 +1,50 @@
+// Utility-helper tests. Run from the repo root:
+//   wfl --test TestPrograms/util.test.wfl
+include from "../app/util.wfl"
+
+describe "Scriptorium utilities":
+
+    test "slugify lowercases and dashes non-alphanumerics":
+        expect slugify of "Hello, World!" to equal "hello-world"
+        expect slugify of "The Analytical Engine — Notes (v2)" to equal "the-analytical-engine-notes-v2"
+    end test
+
+    test "slugify trims leading/trailing separators and collapses runs":
+        expect slugify of "  spaced  out  " to equal "spaced-out"
+        expect slugify of "already-a-slug" to equal "already-a-slug"
+    end test
+
+    test "slugify of punctuation-only is empty":
+        expect slugify of "!!!" to equal ""
+    end test
+
+    test "to_int parses numbers and falls back":
+        expect to_int of "5" and 1 to equal 5
+        expect to_int of "0" and 9 to equal 0
+        expect to_int of "not a number" and 3 to equal 3
+        expect to_int of "" and 7 to equal 7
+    end test
+
+    test "field_or returns value or fallback":
+        store form as parse_form_urlencoded of "title=Hello+World&status=draft"
+        expect field_or of form and "title" and "X" to equal "Hello World"
+        expect field_or of form and "missing" and "X" to equal "X"
+    end test
+
+    test "parse_form_urlencoded decodes percent-escapes":
+        store f as parse_form_urlencoded of "body=a%3Db%26c&n=%20x"
+        expect f["body"] to equal "a=b&c"
+        expect f["n"] to equal " x"
+    end test
+
+    test "parse_cookies reads the session id":
+        store c as parse_cookies of "sid=abc123; theme=dark"
+        expect c["sid"] to equal "abc123"
+    end test
+
+    test "truncate_text shortens and keeps short text intact":
+        expect truncate_text of "hello" and 10 to equal "hello"
+        expect truncate_text of "hello world" and 5 to equal "hello…"
+    end test
+
+end describe

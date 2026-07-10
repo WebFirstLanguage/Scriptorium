@@ -1,0 +1,8 @@
+{% extends "themes/base/templates/layout.html" %}
+{% block title %}{{ page.title }} · {{ site.title }}{% endblock %}
+{% block content %}
+<article class="article">
+  <h1 class="article__title">{{ page.title }}</h1>
+  <div class="prose">{{ page.body_markdown | markdown }}</div>
+</article>
+{% endblock %}

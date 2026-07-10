@@ -1,0 +1,87 @@
+// Data-layer tests. Run from the repo root:
+//   wfl --test TestPrograms/db.test.wfl
+include from "../app/db.wfl"
+
+describe "Scriptorium data layer":
+
+    test "migrate creates tables and is idempotent":
+        open database at "sqlite::memory:" as conn
+        store a as db_migrate of conn
+        store b as db_migrate of conn
+        store users as query conn with "SELECT count(*) AS n FROM users"
+        store row0 as users[0]
+        expect row0["n"] to equal 0
+        close database conn
+    end test
+
+    test "users: create, count, lookup by name and id":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        expect user_count of conn to equal 0
+        store ins as user_create of conn and "ada" and "hash1" and "admin"
+        expect user_count of conn to equal 1
+        store u as user_by_username of conn and "ada"
+        expect u["username"] to equal "ada"
+        expect u["role"] to equal "admin"
+        store u2 as user_by_id of conn and u["id"]
+        expect u2["username"] to equal "ada"
+        store no_user as user_by_username of conn and "nobody"
+        expect no_user to equal nothing
+        close database conn
+    end test
+
+    test "settings: default, get with fallback, set/overwrite":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        expect setting_get of conn and "site_title" and "Fallback" to equal "Fallback"
+        store d as setting_default of conn and "site_title" and "Scriptorium"
+        expect setting_get of conn and "site_title" and "Fallback" to equal "Scriptorium"
+        store d2 as setting_default of conn and "site_title" and "Ignored"
+        expect setting_get of conn and "site_title" and "Fallback" to equal "Scriptorium"
+        store s as setting_set of conn and "site_title" and "My Blog"
+        expect setting_get of conn and "site_title" and "Fallback" to equal "My Blog"
+        close database conn
+    end test
+
+    test "posts: create, fetch by slug, list published excludes drafts":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store p1 as post_create of conn and "first-post" and "First Post" and "Hello **world**" and "published" and 1
+        store p2 as post_create of conn and "draft-post" and "A Draft" and "wip" and "draft" and 1
+        store got as post_by_slug of conn and "first-post"
+        expect got["title"] to equal "First Post"
+        expect got["author_name"] to equal "ada"
+        expect post_count_published of conn to equal 1
+        store published as post_list_published of conn and 10 and 0
+        expect length of published to equal 1
+        store head as published[0]
+        expect head["slug"] to equal "first-post"
+        close database conn
+    end test
+
+    test "sessions: create, resolve to user, delete":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store uid as 1
+        store sc as session_create of conn and "sid-abc" and uid and "2999-01-01 00:00:00"
+        store who as session_user of conn and "sid-abc"
+        expect who["username"] to equal "ada"
+        store gone as session_delete of conn and "sid-abc"
+        store after as session_user of conn and "sid-abc"
+        expect after to equal nothing
+        close database conn
+    end test
+
+    test "sessions: expired session does not resolve":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store sc as session_create of conn and "sid-old" and 1 and "2000-01-01 00:00:00"
+        store who as session_user of conn and "sid-old"
+        expect who to equal nothing
+        close database conn
+    end test
+
+end describe

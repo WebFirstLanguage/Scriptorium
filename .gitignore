@@ -1,0 +1,18 @@
+# SQLite database (created at runtime)
+scriptorium.db
+scriptorium.db-shm
+scriptorium.db-wal
+*.db
+*.db-shm
+*.db-wal
+
+# WFL debug reports / dumps
+*_debug.txt
+*.ast.txt
+*.lex.txt
+
+# Node (only used for screenshot tooling, not part of the app)
+node_modules/
+
+# OS noise
+.DS_Store

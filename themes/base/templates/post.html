@@ -1,0 +1,10 @@
+{% extends "themes/base/templates/layout.html" %}
+{% block title %}{{ post.title }} · {{ site.title }}{% endblock %}
+{% block content %}
+<article class="article">
+  <h1 class="article__title">{{ post.title }}</h1>
+  <div class="article__meta">{{ post.created_at | truncate(10, '') }} · {{ post.author_name | default('unknown') }}</div>
+  <div class="prose">{{ post.body_markdown | markdown }}</div>
+  <p style="margin-top:var(--space-7)"><a href="/">← Back to all posts</a></p>
+</article>
+{% endblock %}

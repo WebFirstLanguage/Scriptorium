@@ -1,0 +1,38 @@
+/* ============================================================
+   WFL — Radii, borders, shadows, motion
+   Rounded but not pill-y; the speech-bubble mark has soft 20px
+   corners, echoed here. Shadows are quiet on the dark surface;
+   the primary "elevation" cue is an accent glow, not a drop.
+   ============================================================ */
+:root {
+  /* ---- Radius (echoes the 20px bubble radius of the mark) ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;   /* = logo bubble corner */
+  --radius-2xl: 28px;
+  --radius-full: 999px;
+
+  /* ---- Borders ---- */
+  --border-width: 1px;
+  --border-hair: var(--border-width) solid var(--border-subtle);
+  --border-line: var(--border-width) solid var(--border-default);
+
+  /* ---- Shadows (subtle on Ink) ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.45);
+  --shadow-inset: inset 0 1px 0 rgba(245, 250, 248, 0.04);
+
+  /* ---- Accent glows (the brand's real elevation cue) ---- */
+  --glow-accent: 0 0 0 1px rgba(18, 165, 148, 0.40), 0 8px 30px rgba(18, 165, 148, 0.18);
+  --glow-focus: 0 0 0 3px rgba(47, 191, 174, 0.35);
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);   /* @kind other */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* @kind other */
+  --dur-fast: 120ms;  /* @kind other */
+  --dur-base: 200ms;  /* @kind other */
+  --dur-slow: 320ms;  /* @kind other */
+}

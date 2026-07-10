@@ -1,0 +1,8 @@
+<svg width="160" height="120" viewBox="0 0 160 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="WFL logo mark">
+  <title>WFL logo mark</title>
+  <desc>An outlined teal speech bubble containing a chevron prompt and a leaf-shaped cursor.</desc>
+  <path d="M32 12 H128 a20 20 0 0 1 20 20 V68 a20 20 0 0 1 -20 20 H64 l-20 20 v-20 H32 a20 20 0 0 1 -20 -20 V32 a20 20 0 0 1 20 -20 Z" fill="none" stroke="#12A594" stroke-width="8" stroke-linejoin="round"></path>
+  <path d="M42 34 l16 16 l-16 16" fill="none" stroke="#12A594" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M78 66 q0 -30 30 -40 q4 30 -30 40 z" fill="#12A594"></path>
+  <path d="M78 66 q6 -18 24 -30" fill="none" stroke="#CFF5E7" stroke-width="2.6" stroke-linecap="round"></path>
+</svg>

@@ -1,0 +1,31 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}{{ form_title }}{% endblock %}
+{% block heading %}{{ form_title }}{% endblock %}
+{% block content %}
+<form method="post" action="{{ action_url }}" class="form">
+  <label class="field">
+    <span>Username</span>
+    <input name="username" value="{{ edit_user.username }}"{% if edit_user.id %} readonly{% endif %} required autofocus>
+  </label>
+  <label class="field">
+    <span>Password{% if edit_user.id %} <em class="hint">leave blank to keep the current one</em>{% endif %}</span>
+    <input type="password" name="password" autocomplete="new-password">
+  </label>
+  <div class="field field--inline">
+    <span>Role</span>
+    <select name="role">
+      <option value="author"{% if edit_user.role == 'author' %} selected{% endif %}>Author — manages their own content</option>
+      <option value="admin"{% if edit_user.role == 'admin' %} selected{% endif %}>Admin — full access</option>
+    </select>
+  </div>
+  <div class="form__actions">
+    <button class="btn btn--primary" type="submit">Save user</button>
+    <a class="btn btn--ghost" href="/admin/users">Cancel</a>
+  </div>
+</form>
+{% if edit_user.id and can_delete %}
+<form method="post" action="/admin/users/{{ edit_user.id }}/delete" class="form--danger" onsubmit="return confirm('Delete this user?')">
+  <button class="btn btn--danger" type="submit">Delete user</button>
+</form>
+{% endif %}
+{% endblock %}

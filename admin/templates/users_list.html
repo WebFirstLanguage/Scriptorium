@@ -1,0 +1,24 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}Users{% endblock %}
+{% block heading %}Users{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="panel__head">
+    <h2>All users</h2>
+    <a class="btn btn--primary" href="/admin/users/new">New user</a>
+  </div>
+  <table class="table">
+    <thead><tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td><span class="badge badge--{{ u.role }}">{{ u.role }}</span></td>
+        <td class="muted">{{ u.created_at | truncate(10, '') }}</td>
+        <td class="row-actions"><a href="/admin/users/{{ u.id }}/edit">Edit</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

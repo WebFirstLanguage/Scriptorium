@@ -1,0 +1,22 @@
+{% extends "admin/templates/admin_layout.html" %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block content %}
+<form method="post" action="/admin/settings" class="form form--wide">
+  <label class="field">
+    <span>Site title</span>
+    <input name="site_title" value="{{ settings.site_title }}" required>
+  </label>
+  <label class="field">
+    <span>Tagline</span>
+    <input name="site_tagline" value="{{ settings.site_tagline }}">
+  </label>
+  <label class="field field--inline">
+    <span>Posts per page</span>
+    <input name="posts_per_page" value="{{ settings.posts_per_page }}" class="mono" style="width:6rem">
+  </label>
+  <div class="form__actions">
+    <button class="btn btn--primary" type="submit">Save settings</button>
+  </div>
+</form>
+{% endblock %}
