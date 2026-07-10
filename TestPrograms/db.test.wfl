@@ -65,12 +65,22 @@ describe "Scriptorium data layer":
         store m as db_migrate of conn
         store au as user_create of conn and "ada" and "h" and "admin"
         store uid as 1
-        store sc as session_create of conn and "sid-abc" and uid and "2999-01-01 00:00:00"
+        store sc as session_create of conn and "sid-abc" and uid and "2999-01-01 00:00:00" and "tok-1"
         store who as session_user of conn and "sid-abc"
         expect who["username"] to equal "ada"
         store gone as session_delete of conn and "sid-abc"
         store after as session_user of conn and "sid-abc"
         expect after to equal nothing
+        close database conn
+    end test
+
+    test "sessions: carry a csrf token that session_user returns":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store sc as session_create of conn and "sid-tok" and 1 and "2999-01-01 00:00:00" and "csrf-abc123"
+        store who as session_user of conn and "sid-tok"
+        expect who["csrf_token"] to equal "csrf-abc123"
         close database conn
     end test
 
@@ -96,9 +106,70 @@ describe "Scriptorium data layer":
         open database at "sqlite::memory:" as conn
         store m as db_migrate of conn
         store au as user_create of conn and "ada" and "h" and "admin"
-        store sc as session_create of conn and "sid-old" and 1 and "2000-01-01 00:00:00"
+        store sc as session_create of conn and "sid-old" and 1 and "2000-01-01 00:00:00" and "tok-old"
         store who as session_user of conn and "sid-old"
         expect who to equal nothing
+        close database conn
+    end test
+
+    test "migrate upgrades a legacy sessions table with a csrf_token column":
+        open database at "sqlite::memory:" as conn
+        store legacy as execute conn with "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+        store m as db_migrate of conn
+        store ins as execute conn with "INSERT INTO sessions (id, user_id, expires_at, csrf_token) VALUES ('s1', 1, '2999-01-01 00:00:00', 'tok')"
+        store rows as query conn with "SELECT csrf_token FROM sessions WHERE id = 's1'"
+        store row0 as rows[0]
+        expect row0["csrf_token"] to equal "tok"
+        close database conn
+    end test
+
+    test "media: create, list newest first, fetch by id, delete":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store au as user_create of conn and "ada" and "h" and "admin"
+        store m1 as media_create of conn and "cat-a1b2.png" and "cat.png" and "image/png" and 1234 and 1
+        store m2 as media_create of conn and "dog-c3d4.jpg" and "dog photo.jpg" and "image/jpeg" and 5678 and 1
+        store rows as media_list_all of conn
+        expect length of rows to equal 2
+        store head as rows[0]
+        expect head["filename"] to equal "dog-c3d4.jpg"
+        expect head["original_name"] to equal "dog photo.jpg"
+        expect head["uploader_name"] to equal "ada"
+        store media_row as media_by_id of conn and 1
+        expect media_row["filename"] to equal "cat-a1b2.png"
+        expect media_row["size"] to equal 1234
+        store del as media_delete of conn and 1
+        store after_rows as media_list_all of conn
+        expect length of after_rows to equal 1
+        store gone as media_by_id of conn and 1
+        expect gone to equal nothing
+        close database conn
+    end test
+
+    test "login attempts: record, count within window, clear":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        expect login_attempts_recent of conn and "10.0.0.1" to equal 0
+        store a1 as login_attempt_record of conn and "10.0.0.1"
+        store a2 as login_attempt_record of conn and "10.0.0.1"
+        store a3 as login_attempt_record of conn and "10.0.0.2"
+        expect login_attempts_recent of conn and "10.0.0.1" to equal 2
+        expect login_attempts_recent of conn and "10.0.0.2" to equal 1
+        store c as login_attempts_clear of conn and "10.0.0.1"
+        expect login_attempts_recent of conn and "10.0.0.1" to equal 0
+        expect login_attempts_recent of conn and "10.0.0.2" to equal 1
+        close database conn
+    end test
+
+    test "login attempts: old attempts fall outside the window and purge":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store old as execute conn with "INSERT INTO login_attempts (ip, attempted_at) VALUES (?, datetime('now', '-1 hour'))" and parameters ["10.0.0.9"]
+        expect login_attempts_recent of conn and "10.0.0.9" to equal 0
+        store p as login_attempts_purge of conn
+        store rows as query conn with "SELECT count(*) AS n FROM login_attempts"
+        store row0 as rows[0]
+        expect row0["n"] to equal 0
         close database conn
     end test
 

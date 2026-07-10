@@ -3,6 +3,7 @@
 {% block heading %}{{ form_title }}{% endblock %}
 {% block content %}
 <form method="post" action="{{ action_url }}" class="form form--wide">
+  <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
   <label class="field">
     <span>Title</span>
     <input name="title" value="{{ page.title }}" required autofocus>
@@ -29,7 +30,9 @@
 </form>
 {% if page.id %}
 <form method="post" action="/admin/pages/{{ page.id }}/delete" class="form--danger" onsubmit="return confirm('Delete this page permanently?')">
+  <input type="hidden" name="csrf_token" value="{{ site.csrf }}">
   <button class="btn btn--danger" type="submit">Delete page</button>
 </form>
 {% endif %}
+{% include "admin/templates/_media_panel.html" %}
 {% endblock %}

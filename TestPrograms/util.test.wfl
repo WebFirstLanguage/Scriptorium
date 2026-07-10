@@ -47,4 +47,19 @@ describe "Scriptorium utilities":
         expect truncate_text of "hello world" and 5 to equal "hello…"
     end test
 
+    test "file_ext returns the lowercased extension without the dot":
+        expect file_ext of "photo.PNG" to equal "png"
+        expect file_ext of "archive.tar.gz" to equal "gz"
+        expect file_ext of "no-extension" to equal ""
+        expect file_ext of ".hidden" to equal ""
+        expect file_ext of "trailing." to equal ""
+    end test
+
+    test "file_stem returns the name before the last dot":
+        expect file_stem of "photo.PNG" to equal "photo"
+        expect file_stem of "archive.tar.gz" to equal "archive.tar"
+        expect file_stem of "no-extension" to equal "no-extension"
+        expect file_stem of ".hidden" to equal ".hidden"
+    end test
+
 end describe

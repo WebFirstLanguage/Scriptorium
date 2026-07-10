@@ -26,14 +26,17 @@ define action called login_check with parameters conn and username and plaintext
     return nothing
 end action
 
-// Start a session for a user and return the new session id.
+// Start a session for a user and return the new session id. Each session also
+// mints its own CSRF token; session_user returns it with the user row and every
+// admin form must echo it back (see csrf_ok).
 // Expiry (7 days) is computed in SQL so we don't depend on WFL date formatting.
 define action called session_start with parameters conn and user_id:
     store sid as new_session_id
     store exp_rows as query conn with "SELECT datetime('now', '+7 days') AS exp"
     store exp_row as exp_rows[0]
     store expires_at as exp_row["exp"]
-    store created as session_create of conn and sid and user_id and expires_at
+    store csrf as generate_csrf_token
+    store created as session_create of conn and sid and user_id and expires_at and csrf
     return sid
 end action
 
@@ -65,6 +68,28 @@ define action called logout_by_cookie with parameters conn and cookie_header:
     end check
     store gone as session_delete of conn and sid
     return yes
+end action
+
+// ---- CSRF -----------------------------------------------------------------
+
+// Does a submitted csrf_token match the one bound to this user's session?
+// Timing-safe (constant_time_equals) and closed by default: no user, no
+// session token, or no submitted token all fail.
+define action called csrf_ok with parameters user and submitted:
+    check if user is nothing:
+        return no
+    end check
+    check if submitted is nothing:
+        return no
+    end check
+    check if submitted is equal to "":
+        return no
+    end check
+    store expected as field_or of user and "csrf_token" and ""
+    check if expected is equal to "":
+        return no
+    end check
+    return constant_time_equals of expected and submitted
 end action
 
 // ---- Role helpers ---------------------------------------------------------

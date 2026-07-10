@@ -15,10 +15,22 @@ include from "util.wfl"
 // ---------------------------------------------------------------------------
 define action called db_migrate with parameters conn:
     store r1 as execute conn with "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at TEXT DEFAULT (datetime('now')))"
-    store r2 as execute conn with "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+    store r2 as execute conn with "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL, csrf_token TEXT NOT NULL DEFAULT '')"
     store r3 as execute conn with "CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
     store r4 as execute conn with "CREATE TABLE IF NOT EXISTS pages (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
     store r5 as execute conn with "CREATE TABLE IF NOT EXISTS settings (skey TEXT PRIMARY KEY, svalue TEXT NOT NULL DEFAULT '')"
+    store r6 as execute conn with "CREATE TABLE IF NOT EXISTS media (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT UNIQUE NOT NULL, original_name TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0, uploader_id INTEGER, created_at TEXT DEFAULT (datetime('now')))"
+    store r7 as execute conn with "CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, attempted_at TEXT DEFAULT (datetime('now')))"
+    // The rate limiter filters on (ip, attempted_at) on every login POST —
+    // exactly when the table is growing fastest — so keep that path indexed.
+    store r7b as execute conn with "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"
+    // Databases created before the CSRF work lack sessions.csrf_token; the
+    // ALTER fails harmlessly once the column exists (no IF NOT EXISTS in SQLite).
+    try:
+        store r8 as execute conn with "ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''"
+    when error:
+        store r8 as no
+    end try
     return yes
 end action
 
@@ -95,13 +107,14 @@ end action
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
-define action called session_create with parameters conn and session_id and user_id and expires_at:
-    return execute conn with "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)" and parameters [session_id and user_id and expires_at]
+define action called session_create with parameters conn and session_id and user_id and expires_at and csrf_token:
+    return execute conn with "INSERT INTO sessions (id, user_id, expires_at, csrf_token) VALUES (?, ?, ?, ?)" and parameters [session_id and user_id and expires_at and csrf_token]
 end action
 
 // Returns the joined user row for a live (non-expired) session, or nothing.
+// Carries the session's csrf_token so handlers can validate POSTed forms.
 define action called session_user with parameters conn and session_id:
-    store rows as query conn with "SELECT u.id AS id, u.username AS username, u.role AS role FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > datetime('now')" and parameters [session_id]
+    store rows as query conn with "SELECT u.id AS id, u.username AS username, u.role AS role, s.csrf_token AS csrf_token FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > datetime('now')" and parameters [session_id]
     return first_row of rows
 end action
 
@@ -111,6 +124,51 @@ end action
 
 define action called session_purge_expired with parameters conn:
     return execute conn with "DELETE FROM sessions WHERE expires_at <= datetime('now')"
+end action
+
+// ---------------------------------------------------------------------------
+// Login attempts — per-IP failure log backing the login rate limiter.
+// Timestamps and the window are SQL-side (datetime('now')) like everything else.
+// ---------------------------------------------------------------------------
+define action called login_attempt_record with parameters conn and ip:
+    return execute conn with "INSERT INTO login_attempts (ip) VALUES (?)" and parameters [ip]
+end action
+
+// Failed attempts from this IP in the last 15 minutes.
+define action called login_attempts_recent with parameters conn and ip:
+    store rows as query conn with "SELECT count(*) AS n FROM login_attempts WHERE ip = ? AND attempted_at > datetime('now', '-15 minutes')" and parameters [ip]
+    store row0 as rows[0]
+    return row0["n"]
+end action
+
+// A successful login wipes the counter for that IP.
+define action called login_attempts_clear with parameters conn and ip:
+    return execute conn with "DELETE FROM login_attempts WHERE ip = ?" and parameters [ip]
+end action
+
+// Housekeeping: drop attempts too old to ever count against the window.
+define action called login_attempts_purge with parameters conn:
+    return execute conn with "DELETE FROM login_attempts WHERE attempted_at <= datetime('now', '-15 minutes')"
+end action
+
+// ---------------------------------------------------------------------------
+// Media — uploaded files; the bytes live under static/uploads/, rows here.
+// ---------------------------------------------------------------------------
+define action called media_create with parameters conn and filename and original_name and content_type and size and uploader_id:
+    return execute conn with "INSERT INTO media (filename, original_name, content_type, size, uploader_id) VALUES (?, ?, ?, ?, ?)" and parameters [filename and original_name and content_type and size and uploader_id]
+end action
+
+define action called media_list_all with parameters conn:
+    return query conn with "SELECT m.id AS id, m.filename AS filename, m.original_name AS original_name, m.content_type AS content_type, m.size AS size, m.uploader_id AS uploader_id, m.created_at AS created_at, u.username AS uploader_name FROM media m LEFT JOIN users u ON u.id = m.uploader_id ORDER BY m.created_at DESC, m.id DESC"
+end action
+
+define action called media_by_id with parameters conn and the_id:
+    store rows as query conn with "SELECT id, filename, original_name, content_type, size, uploader_id, created_at FROM media WHERE id = ?" and parameters [the_id]
+    return first_row of rows
+end action
+
+define action called media_delete with parameters conn and the_id:
+    return execute conn with "DELETE FROM media WHERE id = ?" and parameters [the_id]
 end action
 
 // ---------------------------------------------------------------------------

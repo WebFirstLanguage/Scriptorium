@@ -19,6 +19,7 @@
   <p class="auth-card__sub">Welcome back. Sign in to manage your site.</p>
   {% if flash %}<div class="flash flash--{{ flash.kind }}">{{ flash.message }}</div>{% endif %}
   <form method="post" action="/admin/login" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
     <label class="field">
       <span>Username</span>
       <input name="username" value="{{ form.username }}" autofocus autocomplete="username">

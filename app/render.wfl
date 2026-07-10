@@ -20,6 +20,7 @@ define action called site_context with parameters conn and user:
         "nav" is nav_pages
         "user" is user
         "is_admin" is is_admin of user
+        "csrf" is field_or of user and "csrf_token" and ""
         "asset_base" is "/assets"
         "year" is yr_row["y"]
     end map
