@@ -1,26 +1,13 @@
 {% extends "themes/base/templates/skeleton.html" %}
+{# ── THE PAGE ASSEMBLER ──────────────────────────────────────────────
+   A page is assembled from sections, in order:
+       header (section)  →  body (this page's content)  →  footer (section)
+   The header/footer sections live in themes/base/sections/ and are reused on
+   every page; only the body changes per page type. See docs/THEMING.md. #}
 {% block body %}
-<header class="site-header">
-  <div class="site-header__inner">
-    <a class="brand" href="/">
-      <img src="{{ site.asset_base }}/ds/assets/wfl-mark.svg" alt="">
-      <span class="brand__name">{{ site.title }}</span>
-    </a>
-    <nav class="site-nav">
-      <a href="/">Home</a>
-      {% for p in site.nav %}<a href="/page/{{ p.slug }}">{{ p.title }}</a>{% endfor %}
-    </nav>
-    <span class="site-header__spacer"></span>
-    {% if site.user %}<a class="site-header__admin" href="/admin">Admin</a>{% else %}<a class="site-header__admin" href="/admin/login">Sign in</a>{% endif %}
-  </div>
-</header>
-<main class="wrap">
+{% include "themes/base/sections/header.html" %}
+<main class="site-body wrap">
 {% block content %}{% endblock %}
 </main>
-<footer class="site-footer">
-  <div class="wrap">
-    <span>© {{ site.year }} {{ site.title }}</span>
-    <span>Built with WFL · Scriptorium</span>
-  </div>
-</footer>
+{% include "themes/base/sections/footer.html" %}
 {% endblock %}

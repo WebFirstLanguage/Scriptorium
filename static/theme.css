@@ -16,6 +16,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---- Region shell: header → body → footer, footer pinned to the bottom.
+        The three regions are non-negotiable; see docs/THEMING.md. ---- */
+body { display: flex; flex-direction: column; min-height: 100vh; }
+.site-body { flex: 1 0 auto; }    /* body grows to fill short pages */
+.site-footer { flex-shrink: 0; }  /* footer keeps its height        */
+
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
 
