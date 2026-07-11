@@ -1,11 +1,13 @@
 {% extends "themes/base/templates/skeleton.html" %}
-{# The region shell. Every content template extends THIS, and this file is the
-   one place that guarantees the three non-negotiable regions render in order:
-   header → body → footer. See docs/THEMING.md. #}
+{# ── THE PAGE ASSEMBLER ──────────────────────────────────────────────
+   A page is assembled from sections, in order:
+       header (section)  →  body (this page's content)  →  footer (section)
+   The header/footer sections live in themes/base/sections/ and are reused on
+   every page; only the body changes per page type. See docs/THEMING.md. #}
 {% block body %}
-{% include "themes/base/partials/header.html" %}
+{% include "themes/base/sections/header.html" %}
 <main class="site-body wrap">
 {% block content %}{% endblock %}
 </main>
-{% include "themes/base/partials/footer.html" %}
+{% include "themes/base/sections/footer.html" %}
 {% endblock %}

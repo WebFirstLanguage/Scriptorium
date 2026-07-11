@@ -34,9 +34,9 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 - **Design system** — every screen uses the WFL Design System tokens
   (Alegreya display serif, Verdant Teal accent, Ink surfaces, pill buttons,
   20px card radius).
-- **Swappable themes** — the public site renders through a theme
-  (`themes/base/`) that follows a fixed three‑region contract: every page has a
-  **header**, a **body**, and a **footer**. See [`docs/THEMING.md`](docs/THEMING.md).
+- **Swappable themes** — the public site is built from reusable **sections** and
+  assembled into pages: every page is a **header** + a **body** + a **footer**,
+  in that order (`themes/base/`). See [`docs/THEMING.md`](docs/THEMING.md).
 
 | Admin dashboard | Post editor | Sign in |
 |---|---|---|
@@ -103,7 +103,7 @@ app/
   auth.wfl            passwords, sessions, CSRF tokens, role checks
   render.wfl          shared "site" context + Scribe wrappers
 lib/scribe.wfl        vendored Scribe template engine
-themes/base/          Default theme: templates (skeleton -> layout) + header/footer partials
+themes/base/          Default theme: sections/ (header, footer) + templates (skeleton, assembler, bodies)
 themes/README.md      Theme layout at a glance
 admin/templates       Admin panel templates
 static/               WFL Design System (ds/) + theme.css + admin.css
