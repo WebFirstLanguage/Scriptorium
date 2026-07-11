@@ -1,0 +1,16 @@
+{# REGION 1 of 3 — the header. REQUIRED on every page (see docs/THEMING.md).
+   Site identity + primary navigation. Exactly one <header> per page. #}
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="/">
+      <img src="{{ site.asset_base }}/ds/assets/wfl-mark.svg" alt="">
+      <span class="brand__name">{{ site.title }}</span>
+    </a>
+    <nav class="site-nav">
+      <a href="/">Home</a>
+      {% for p in site.nav %}<a href="/page/{{ p.slug }}">{{ p.title }}</a>{% endfor %}
+    </nav>
+    <span class="site-header__spacer"></span>
+    {% if site.user %}<a class="site-header__admin" href="/admin">Admin</a>{% else %}<a class="site-header__admin" href="/admin/login">Sign in</a>{% endif %}
+  </div>
+</header>

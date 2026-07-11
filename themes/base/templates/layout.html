@@ -1,26 +1,11 @@
 {% extends "themes/base/templates/skeleton.html" %}
+{# The region shell. Every content template extends THIS, and this file is the
+   one place that guarantees the three non-negotiable regions render in order:
+   header → body → footer. See docs/THEMING.md. #}
 {% block body %}
-<header class="site-header">
-  <div class="site-header__inner">
-    <a class="brand" href="/">
-      <img src="{{ site.asset_base }}/ds/assets/wfl-mark.svg" alt="">
-      <span class="brand__name">{{ site.title }}</span>
-    </a>
-    <nav class="site-nav">
-      <a href="/">Home</a>
-      {% for p in site.nav %}<a href="/page/{{ p.slug }}">{{ p.title }}</a>{% endfor %}
-    </nav>
-    <span class="site-header__spacer"></span>
-    {% if site.user %}<a class="site-header__admin" href="/admin">Admin</a>{% else %}<a class="site-header__admin" href="/admin/login">Sign in</a>{% endif %}
-  </div>
-</header>
-<main class="wrap">
+{% include "themes/base/partials/header.html" %}
+<main class="site-body wrap">
 {% block content %}{% endblock %}
 </main>
-<footer class="site-footer">
-  <div class="wrap">
-    <span>© {{ site.year }} {{ site.title }}</span>
-    <span>Built with WFL · Scriptorium</span>
-  </div>
-</footer>
+{% include "themes/base/partials/footer.html" %}
 {% endblock %}
