@@ -130,8 +130,9 @@ noted inline:
   accepted (no SVG — it can carry scripts). Stored names are re-derived, never
   trusted: `slugify(original stem)` + a random hex suffix + the vetted
   extension, so path separators or oddball characters in the client's filename
-  never reach the filesystem. Bytes land in `static/uploads/` (served by the
-  existing `/assets/*` route, which already rejects `..`), and a `media` row
+  never reach the filesystem. Bytes land in the uploads directory (see
+  *Storage* below — `static/uploads/` by default), served by the existing
+  `/assets/uploads/*` route, which already rejects `..`, and a `media` row
   records size/type/uploader. Deleting is uploader-or-admin (`can_edit`).
   The file *content* is not decoded or signature-checked: WFL currently has
   no image decoder and no byte-level access to binary values, so the
@@ -140,6 +141,22 @@ noted inline:
   type, never `text/html` — so mislabelled bytes render as a broken image
   rather than executing. Revisit if the WFL stdlib grows binary inspection
   primitives.
+
+## Storage — the data directory
+
+All mutable state lives in **one** place so a container or CI deploy can mount a
+single volume and never lose content on redeploy. `main.wfl` resolves this at
+boot: it reads an optional `data_dir` key from `.wflcfg` (with the pure,
+unit-tested `config_value_from` helper in `util.wfl` — WFL programs cannot read
+their own `.wflcfg` through the runtime, so the app parses the file itself) and,
+when set, keeps the database at `<data_dir>/scriptorium.db` and uploads at
+`<data_dir>/uploads/`, creating the directory if needed. The `/assets/uploads/*`
+route reads from the same directory, so media stays reachable wherever it lives.
+
+The two path globals (`db_path`, `uploads_dir`) are declared up front with their
+legacy defaults (`scriptorium.db`, `static/uploads`) and only re-pointed when
+`data_dir` is set — so an existing install with no `data_dir` behaves exactly as
+before. Backward compatibility is preserved; the new layout is strictly opt-in.
 
 ## Data model
 
@@ -150,7 +167,7 @@ noted inline:
 | `posts` | id, slug (unique), title, body_markdown, status (`draft`/`published`), author_id, created_at, updated_at |
 | `pages` | id, slug (unique), title, body_markdown, status, author_id, created_at, updated_at |
 | `settings` | skey (PK), svalue |
-| `media` | id, filename (unique, on disk under `static/uploads/`), original_name, content_type, size, uploader_id, created_at |
+| `media` | id, filename (unique, on disk under the uploads dir — `static/uploads/` by default, `<data_dir>/uploads/` when configured), original_name, content_type, size, uploader_id, created_at |
 | `login_attempts` | id, ip, attempted_at |
 
 Timestamps are filled by SQLite (`DEFAULT (datetime('now'))` and explicit

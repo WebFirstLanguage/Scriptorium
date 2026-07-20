@@ -52,6 +52,29 @@ Everything renders through **Scribe** (`lib/scribe.wfl`): `{% extends %}`,
 `{% block %}`, `{% include %}`, `{% for %}`, `{% if %}`, filters (`| markdown`,
 `| truncate`, `| default`, `| striptags`), and auto‑escaping.
 
+### The `markdown` filter
+
+`{{ post.body_markdown | markdown }}` renders a small, safe Markdown subset —
+HTML in the source is escaped first, so authored markup can never inject tags:
+
+- **Headings** (`# …` through `###### …`), **paragraphs**, and **unordered
+  lists** (a `-` or `*` followed by a space).
+- **Blockquotes** — lines beginning with `>` (followed by a space) are gathered
+  into a `<blockquote>` and their contents rendered as Markdown (so `> **Note:**
+  …` bolds inside the quote). Consecutive `>` lines join; a `>` on its own line
+  starts a new paragraph within the quote.
+- **Fenced code blocks** — text between ```` ``` ```` fences becomes
+  `<pre><code>…</code></pre>` with its contents escaped and inline Markdown
+  left untouched. An optional info string (```` ```rust ````) is accepted.
+- **Inline**: `**bold**`, `*italic*`, `` `code` ``, and `[text](url)` links
+  (dangerous URL schemes such as `javascript:` are neutralised).
+
+The filter returns **safe** (already-escaped) HTML. Text filters that subset
+that output — `striptags`, `truncate`, `trim`, `first`, `last` — preserve the
+safe marker, so an excerpt chain like
+`{{ post.body_markdown | markdown | striptags | truncate(180) }}` is **not**
+escaped a second time (no `&#39;` → `&amp;#39;` corruption).
+
 ---
 
 ## 2. How a page is assembled

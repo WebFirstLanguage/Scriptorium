@@ -71,6 +71,33 @@ sign in. Add more users (admins or authors) under **Users**.
 > `127.0.0.1:8080` by default; set `web_server_bind_address = 0.0.0.0` to expose
 > it behind a reverse proxy.
 
+### Data directory (containers, backups)
+
+By default Scriptorium keeps `scriptorium.db` in the working directory and
+uploads under `static/uploads/` — fine for a local run, but scattered across the
+app tree. Set **`data_dir`** in `.wflcfg` to consolidate *all* mutable state
+under one directory:
+
+```ini
+# .wflcfg
+data_dir = /var/lib/scriptorium
+```
+
+Scriptorium then keeps the database at `<data_dir>/scriptorium.db` and uploads at
+`<data_dir>/uploads/` (still served at `/assets/uploads/*`), creating the
+directory if needed. This cleanly separates *the app* (immutable, replaceable —
+a container image, a `git` deploy) from *the site* (precious, backed up): mount
+one volume at `data_dir` and a redeploy can never destroy your content. Leaving
+`data_dir` unset keeps the legacy layout, so existing installs are unaffected.
+
+For Docker, point it at the volume mount and mount a single directory:
+
+```yaml
+# compose (sketch)
+volumes:
+  - ./data:/var/lib/scriptorium   # holds scriptorium.db + uploads/
+```
+
 ## Routes
 
 All state lives in the **path** (or in POST bodies) — stable, shareable URLs.
@@ -96,9 +123,9 @@ as a hidden `csrf_token` field) — requests without it get a 403.
 
 ```text
 main.wfl              Boot (open DB, migrate, seed) + request loop + router + handlers
-.wflcfg               WFL runtime config (bind address, TLS, body-size cap)
+.wflcfg               WFL runtime config (bind address, TLS, body-size cap, data_dir)
 app/
-  util.wfl            slugify, to_int, field_or, truncate, file_ext/stem (parsing is stdlib)
+  util.wfl            slugify, to_int, field_or, truncate, file_ext/stem, config_value_from (parsing is stdlib)
   db.wfl              SQLite schema + every query/execute helper
   auth.wfl            passwords, sessions, CSRF tokens, role checks
   render.wfl          shared "site" context + Scribe wrappers
@@ -107,7 +134,7 @@ themes/base/          Default theme: sections/ (header, footer) + templates (ske
 themes/README.md      Theme layout at a glance
 admin/templates       Admin panel templates
 static/               WFL Design System (ds/) + theme.css + admin.css
-static/uploads/       Uploaded media (runtime; served as /assets/uploads/*)
+static/uploads/       Uploaded media (default; relocates under data_dir when set)
 TestPrograms/         WFL test suites (wfl --test)
 docs/                 Architecture notes + THEMING.md + screenshots
 ```
