@@ -1026,8 +1026,25 @@ define action called scribe_md_is_fence with parameters sc_s:
     return no
 end action
 
-// Render a markdown subset to trusted (safe-marked) HTML.
+// Render a blockquote's gathered inner text one nesting level down. The
+// recursion is bounded (a pathological `> > > …` input would otherwise drive
+// unbounded call depth); past the cap the remaining text is emitted as escaped
+// plain text rather than parsed for still-deeper quotes.
+define action called scribe_md_render_bq with parameters sc_bq and sc_depth:
+    check if sc_depth is greater than or equal to 32:
+        return scribe_escape of sc_bq
+    end check
+    return scribe_to_text of (scribe_markdown_at of sc_bq and (sc_depth plus 1))
+end action
+
+// Render a markdown subset to trusted (safe-marked) HTML. Public entry point:
+// callers use `scribe_markdown of src`; blockquote nesting is tracked via the
+// `sc_depth` parameter of the internal `scribe_markdown_at`.
 define action called scribe_markdown with parameters sc_src:
+    return scribe_markdown_at of sc_src and 0
+end action
+
+define action called scribe_markdown_at with parameters sc_src and sc_depth:
     store lines as split sc_src by "\n"
     store out as ""
     store in_list as no
@@ -1073,7 +1090,7 @@ define action called scribe_markdown with parameters sc_src:
                     change in_list to no
                 end check
                 check if in_bq:
-                    change out to out with "<blockquote>" with (scribe_to_text of (scribe_markdown of bq_buf)) with "</blockquote>"
+                    change out to out with "<blockquote>" with (scribe_md_render_bq of bq_buf and sc_depth) with "</blockquote>"
                     change bq_buf to ""
                     change in_bq to no
                 end check
@@ -1091,7 +1108,7 @@ define action called scribe_markdown with parameters sc_src:
                         change in_list to no
                     end check
                     check if in_bq:
-                        change out to out with "<blockquote>" with (scribe_to_text of (scribe_markdown of bq_buf)) with "</blockquote>"
+                        change out to out with "<blockquote>" with (scribe_md_render_bq of bq_buf and sc_depth) with "</blockquote>"
                         change bq_buf to ""
                         change in_bq to no
                     end check
@@ -1123,7 +1140,7 @@ define action called scribe_markdown with parameters sc_src:
                     otherwise:
                         // Any other non-blank line ends an open blockquote.
                         check if in_bq:
-                            change out to out with "<blockquote>" with (scribe_to_text of (scribe_markdown of bq_buf)) with "</blockquote>"
+                            change out to out with "<blockquote>" with (scribe_md_render_bq of bq_buf and sc_depth) with "</blockquote>"
                             change bq_buf to ""
                             change in_bq to no
                         end check
@@ -1308,7 +1325,15 @@ define action called scribe_apply_filter with parameters sc_fname and sc_val and
         end check
         store sc_trunc as txt
         check if (length of txt) is greater than lim:
-            change sc_trunc to (substring of txt and 0 and lim) with suffix
+            // On the safe path the whole result is marked safe and skips output
+            // escaping, so the caller-supplied suffix (an arbitrary expression,
+            // not just a literal) must be escaped here or it would be a raw-HTML
+            // injection point. On the unsafe path output-time escaping covers it.
+            check if sc_was_safe:
+                change sc_trunc to (substring of txt and 0 and lim) with (scribe_escape of suffix)
+            otherwise:
+                change sc_trunc to (substring of txt and 0 and lim) with suffix
+            end check
         end check
         check if sc_was_safe:
             return scribe_raw_marker of sc_trunc

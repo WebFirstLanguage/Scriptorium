@@ -58,10 +58,10 @@ Everything renders through **Scribe** (`lib/scribe.wfl`): `{% extends %}`,
 HTML in the source is escaped first, so authored markup can never inject tags:
 
 - **Headings** (`# …` through `###### …`), **paragraphs**, and **unordered
-  lists** (`- ` / `* `).
-- **Blockquotes** — lines beginning with `> ` are gathered into a
-  `<blockquote>` and their contents rendered as Markdown (so `> **Note:** …`
-  bolds inside the quote). Consecutive `>` lines join; a `>` on its own line
+  lists** (a `-` or `*` followed by a space).
+- **Blockquotes** — lines beginning with `>` (followed by a space) are gathered
+  into a `<blockquote>` and their contents rendered as Markdown (so `> **Note:**
+  …` bolds inside the quote). Consecutive `>` lines join; a `>` on its own line
   starts a new paragraph within the quote.
 - **Fenced code blocks** — text between ```` ``` ```` fences becomes
   `<pre><code>…</code></pre>` with its contents escaped and inline Markdown

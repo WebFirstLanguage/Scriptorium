@@ -66,4 +66,28 @@ describe "Scribe markdown and filters":
         expect out to equal "a&lt;b"
     end test
 
+    test "truncate escapes a caller-supplied suffix on the safe path":
+        // An HTML-bearing suffix must not become a raw-HTML injection point when
+        // the (safe) result skips output escaping. Regression for the truncate
+        // safe-marker fix.
+        store suffix_args as [3 and "<b>"]
+        store safe_in as scribe_raw_marker of "abcdefghij"
+        store result as scribe_apply_filter of "truncate" and safe_in and suffix_args
+        expect scribe_is_safe of result to equal yes
+        expect scribe_to_text of result to equal "abc&lt;b&gt;"
+    end test
+
+    test "deeply nested blockquotes render without unbounded recursion":
+        // Build a `> > > … x` line far deeper than the nesting cap; it must
+        // still render (bounded recursion) rather than exhaust the call stack.
+        store deep as "x"
+        store i as 0
+        repeat while i is less than 60:
+            change deep to "> " with deep
+            change i to i plus 1
+        end repeat
+        store html as scribe_to_text of (scribe_markdown of deep)
+        expect (substring of html and 0 and 12) to equal "<blockquote>"
+    end test
+
 end describe
