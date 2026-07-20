@@ -1,0 +1,69 @@
+// Scribe templating-engine tests. Run from the repo root:
+//   wfl --test TestPrograms/scribe.test.wfl
+//
+// Covers the markdown filter (blockquotes, fenced code) and the safe-marker
+// propagation that keeps `markdown | striptags | truncate` from double-escaping.
+include from "../lib/scribe.wfl"
+
+describe "Scribe markdown and filters":
+
+    // --- issue #6: blockquotes and fenced code blocks -----------------------
+
+    test "markdown renders > lines as a blockquote":
+        store src as "Intro paragraph.\n\n> **Note:** this should be a blockquote.\n\nClosing paragraph."
+        store html as scribe_to_text of (scribe_markdown of src)
+        expect html to equal "<p>Intro paragraph.</p><blockquote><p><strong>Note:</strong> this should be a blockquote.</p></blockquote><p>Closing paragraph.</p>"
+    end test
+
+    test "markdown blockquote gathers consecutive > lines and inner blank lines":
+        store src as "> para one\n>\n> para two"
+        store html as scribe_to_text of (scribe_markdown of src)
+        expect html to equal "<blockquote><p>para one</p><p>para two</p></blockquote>"
+    end test
+
+    test "markdown renders a fenced code block, escaping its contents":
+        store src as "Before.\n\n```\n<b>&amp;</b>\ncode line 2\n```\n\nAfter."
+        store html as scribe_to_text of (scribe_markdown of src)
+        expect html to equal "<p>Before.</p><pre><code>&lt;b&gt;&amp;amp;&lt;/b&gt;\ncode line 2</code></pre><p>After.</p>"
+    end test
+
+    test "markdown code fences do not run inline markdown":
+        store src as "```\n**not bold** and > not a quote\n```"
+        store html as scribe_to_text of (scribe_markdown of src)
+        expect html to equal "<pre><code>**not bold** and &gt; not a quote</code></pre>"
+    end test
+
+    // --- issue #7: safe-marker propagation through text filters --------------
+
+    test "striptags on safe input stays safe (re-marked)":
+        store no_args as []
+        store safe_in as scribe_raw_marker of "<p>The Board&#39;s note</p>"
+        store result as scribe_apply_filter of "striptags" and safe_in and no_args
+        expect scribe_is_safe of result to equal yes
+        expect scribe_to_text of result to equal "The Board&#39;s note"
+    end test
+
+    test "truncate on safe input stays safe (re-marked)":
+        store trunc_args as [8]
+        store safe_in as scribe_raw_marker of "abcdefghijkl"
+        store result as scribe_apply_filter of "truncate" and safe_in and trunc_args
+        expect scribe_is_safe of result to equal yes
+    end test
+
+    test "markdown | striptags | truncate does not double-escape entities":
+        create map ctx:
+            "body" is "The Board's opening note about the fleet."
+        end map
+        store out as scribe_render of "{{ body | markdown | striptags | truncate(180) }}" and ctx
+        expect out to equal "The Board&#39;s opening note about the fleet."
+    end test
+
+    test "unsafe input is still auto-escaped after a text filter":
+        create map ctx2:
+            "body" is "a<b"
+        end map
+        store out as scribe_render of "{{ body | truncate(180) }}" and ctx2
+        expect out to equal "a&lt;b"
+    end test
+
+end describe
