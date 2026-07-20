@@ -127,3 +127,27 @@ define action called truncate_text with parameters source_text and max_len:
     store cut as substring of source_text and 0 and max_len
     return cut with "…"
 end action
+
+// config_value_from: read a `key = value` line out of `.wflcfg`-style text.
+// Full-line `#` comments and blank lines are skipped; the first matching key
+// wins and its value is trimmed. Returns `fallback` when the key is absent.
+// Pure (no I/O) so it is easy to unit test; main.wfl feeds it the file text.
+define action called config_value_from with parameters cfg_text and cfg_key and fallback:
+    store cfg_lines as split cfg_text by "\n"
+    for each raw_line in cfg_lines:
+        store the_line as trim of raw_line
+        check if (length of the_line) is greater than 0:
+            check if (substring of the_line and 0 and 1) is not "#":
+                store eq_pos as indexof of the_line and "="
+                check if eq_pos is greater than 0:
+                    store found_key as trim of (substring of the_line and 0 and eq_pos)
+                    check if found_key is equal to cfg_key:
+                        store value_start as eq_pos plus 1
+                        return trim of (substring of the_line and value_start and ((length of the_line) minus value_start))
+                    end check
+                end check
+            end check
+        end check
+    end for
+    return fallback
+end action

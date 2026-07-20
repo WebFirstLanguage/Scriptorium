@@ -17,3 +17,11 @@ web_server_bind_address = 127.0.0.1
 # Request body cap (bytes). The default is 1 MiB; media uploads need more.
 # 10 MiB is a sensible ceiling for images pasted into posts.
 web_server_max_body_size = 10485760
+
+# Data directory — where Scriptorium keeps all mutable state (read by the app,
+# not the WFL runtime). Set this to consolidate the database and uploads under
+# one directory so a container/CI redeploy can mount a single volume and never
+# lose content. When set:  <data_dir>/scriptorium.db  and  <data_dir>/uploads/.
+# Leave it unset (commented) to keep the legacy layout: ./scriptorium.db and
+# ./static/uploads/. See README.md → "Data directory".
+# data_dir = /var/lib/scriptorium

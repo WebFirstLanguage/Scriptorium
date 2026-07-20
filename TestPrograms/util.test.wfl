@@ -62,4 +62,16 @@ describe "Scriptorium utilities":
         expect file_stem of ".hidden" to equal ".hidden"
     end test
 
+    test "config_value_from reads a key and trims its value":
+        store cfg as "# a comment\ndata_dir =  /var/lib/scriptorium  \nlog_level = info"
+        expect config_value_from of cfg and "data_dir" and "." to equal "/var/lib/scriptorium"
+        expect config_value_from of cfg and "log_level" and "x" to equal "info"
+    end test
+
+    test "config_value_from falls back when the key is absent or commented":
+        store cfg as "# data_dir = /nope\nlog_level = info"
+        expect config_value_from of cfg and "data_dir" and "." to equal "."
+        expect config_value_from of "" and "data_dir" and "./data" to equal "./data"
+    end test
+
 end describe

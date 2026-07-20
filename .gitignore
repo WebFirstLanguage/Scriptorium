@@ -10,6 +10,7 @@ scriptorium.db-wal
 *_debug.txt
 *.ast.txt
 *.lex.txt
+wfl_exec.log
 
 # Node (only used for screenshot tooling, not part of the app)
 node_modules/

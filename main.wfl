@@ -14,8 +14,18 @@
 // vendored Scribe template engine. Because WFL's `header`, `path`, and `method`
 // request values are only available in the top-level request loop, the loop
 // reads them once and passes them into the handler actions below.
+//
+// All mutable state (the database and uploaded media) lives under one data
+// directory so a container/CI deploy can mount a single volume and never lose
+// content on redeploy. The paths below default to the legacy layout and are
+// re-pointed at boot when `data_dir` is set in .wflcfg. See issue #5.
 // ===========================================================================
 include from "app/render.wfl"
+
+// Mutable-state paths, declared up front so the asset/media actions can read
+// them. Boot (further down) reassigns these from `data_dir` when configured.
+store db_path as "scriptorium.db"
+store uploads_dir as "static/uploads"
 
 // ---------------------------------------------------------------------------
 // Response helpers (respond works inside an action when `req` is a parameter).
@@ -95,6 +105,12 @@ define action called serve_asset with parameters req and req_path:
     end check
     store rel as substring of req_path and 8 and ((length of req_path) minus 8)
     store filepath as "static/" with rel
+    // Uploaded media may live outside the app tree (see data_dir), so route
+    // /assets/uploads/* to the configured uploads directory rather than static/.
+    check if (indexof of rel and "uploads/") is equal to 0:
+        store upload_rel as substring of rel and 8 and ((length of rel) minus 8)
+        change filepath to uploads_dir with "/" with upload_rel
+    end check
     check if file exists at filepath:
         open file at filepath for reading binary as asset_file
         store asset_bytes as read binary from asset_file
@@ -895,7 +911,7 @@ define action called handle_media_upload with parameters db and req and user:
         change base_name to "upload"
     end check
     store stored_name as base_name with "-" with (secure_random_bytes of 4) with "." with ext
-    store stored_path as "static/uploads/" with stored_name
+    store stored_path as uploads_dir with "/" with stored_name
     open file at stored_path for writing binary as upload_file
     write binary file_bytes into upload_file
     close file upload_file
@@ -932,7 +948,7 @@ define action called handle_media_delete with parameters db and req and user and
         // orphaned bytes, but a record pointing at a deleted file would keep
         // rendering a broken entry in the library.
         store del as media_delete of db and the_id
-        store stored_path as "static/uploads/" with media_row["filename"]
+        store stored_path as uploads_dir with "/" with media_row["filename"]
         try:
             check if file exists at stored_path:
                 delete file at stored_path
@@ -1166,9 +1182,31 @@ define action called dispatch with parameters db and req and req_method and req_
 end action
 
 // ===========================================================================
-// Boot: open DB, migrate, seed, then serve.
+// Boot: resolve the data directory, open DB, migrate, seed, then serve.
 // ===========================================================================
-open database at "sqlite://scriptorium.db" as db
+
+// Consolidate mutable state under one directory when `data_dir` is set in
+// .wflcfg (e.g. `data_dir = /var/lib/scriptorium`). Unset keeps the legacy
+// layout — scriptorium.db in the working directory, uploads under static/ —
+// so existing installs are unaffected. See issue #5.
+store data_dir as ""
+check if file exists at ".wflcfg":
+    store cfg_text as scribe_read_file of ".wflcfg"
+    change data_dir to config_value_from of cfg_text and "data_dir" and ""
+end check
+check if data_dir is not equal to "":
+    check if directory exists at data_dir:
+        store data_dir_ready as yes
+    otherwise:
+        create directory at data_dir
+    end check
+    change db_path to data_dir with "/scriptorium.db"
+    change uploads_dir to data_dir with "/uploads"
+    display "Scriptorium data directory: " with data_dir
+end check
+
+store db_url as "sqlite://" with db_path
+open database at db_url as db
 store migrated as db_migrate of db
 store sd1 as setting_default of db and "site_title" and "Scriptorium"
 store sd2 as setting_default of db and "site_tagline" and "Words, well kept."
@@ -1191,11 +1229,11 @@ end check
 store purged as session_purge_expired of db
 store purged_attempts as login_attempts_purge of db
 
-// Media uploads are written under static/, so /assets/uploads/* serves them.
-check if directory exists at "static/uploads":
+// Ensure the uploads directory exists; /assets/uploads/* serves from here.
+check if directory exists at uploads_dir:
     store uploads_ready as yes
 otherwise:
-    create directory at "static/uploads"
+    create directory at uploads_dir
 end check
 
 listen on port 8080 as web_server
