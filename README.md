@@ -44,8 +44,18 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 
 ## Quick start
 
-You need the WFL interpreter (`wfl`) on your PATH. Then, **from the repository
-root** (template and asset paths resolve relative to the working directory):
+You need the WFL interpreter (`wfl`) on your PATH. Scriptorium keeps the
+[Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
+submodule, so clone with submodules:
+
+```sh
+git clone --recurse-submodules https://github.com/WebFirstLanguage/Scriptorium.git
+```
+
+(Already cloned without them? `git submodule update --init --recursive`.)
+
+Then, **from the repository root** (template and asset paths resolve relative to
+the working directory):
 
 ```sh
 wfl main.wfl
@@ -110,10 +120,13 @@ All state lives in the **path** (or in POST bodies) — stable, shareable URLs.
 | GET | `/assets/*` | Static files (CSS, fonts, logo, uploads) |
 | GET/POST | `/admin/login` · `/admin/logout` | Auth (logout is POST-only) |
 | GET | `/admin` | Dashboard |
-| GET/POST | `/admin/posts` · `/admin/posts/new` · `/admin/posts/:id/edit` · `/admin/posts/:id` · `/admin/posts/:id/delete` | Posts CRUD |
-| GET/POST | `/admin/pages…` | Pages CRUD (same shape) |
-| GET/POST | `/admin/media` · `/admin/media/upload` · `/admin/media/:id/delete` | Media library + uploads |
-| GET/POST | `/admin/users…` | Users CRUD *(admin only)* |
+| GET | `/admin/posts` · `/admin/posts/new` · `/admin/posts/:id/edit` | Posts: list, new form, edit form |
+| POST | `/admin/posts` · `/admin/posts/:id` · `/admin/posts/:id/delete` | Posts: create, update, delete *(GET → 405)* |
+| GET/POST | `/admin/pages…` | Pages CRUD (same shape, same method split) |
+| GET | `/admin/media` | Media library |
+| POST | `/admin/media/upload` | Upload *(GET redirects to `/admin/media`)* |
+| POST | `/admin/media/:id/delete` | Delete *(GET → 405)* |
+| GET/POST | `/admin/users…` | Users CRUD *(admin only; delete is POST-only)* |
 | GET/POST | `/admin/settings` | Site settings *(admin only)* |
 
 Every admin POST must carry the session's CSRF token (rendered into each form
@@ -129,7 +142,8 @@ app/
   db.wfl              SQLite schema + every query/execute helper
   auth.wfl            passwords, sessions, CSRF tokens, role checks
   render.wfl          shared "site" context + Scribe wrappers
-lib/scribe.wfl        vendored Scribe template engine
+lib/scribe/           Scribe template engine — git submodule of WebFirstLanguage/Scribe
+scripts/update-scribe.sh  Bump the Scribe submodule to the newest upstream commit
 themes/base/          Default theme: sections/ (header, footer) + templates (skeleton, assembler, bodies)
 themes/README.md      Theme layout at a glance
 admin/templates       Admin panel templates
@@ -147,6 +161,34 @@ wfl --test TestPrograms/db.test.wfl     # data layer against sqlite::memory:
 wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
 ```
 
+## Keeping Scribe current
+
+The template engine is not vendored as a copied file any more — `lib/scribe` is
+a **git submodule** pointing at
+[WebFirstLanguage/Scribe](https://github.com/WebFirstLanguage/Scribe), and
+`app/render.wfl` includes it from `../lib/scribe/src/scribe.wfl`. Improvements
+to Scribe now flow into Scriptorium instead of having to be re-applied by hand.
+
+One thing to know up front: **a submodule records one exact Scribe commit.**
+That is what makes a checkout reproducible — everyone gets the Scribe that was
+tested against this Scriptorium — but it also means Scribe moving forward does
+*not* move Scriptorium on its own. Something has to bump the pin:
+
+```sh
+scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
+scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
+wfl --test TestPrograms/scribe.test.wfl  # the suite a Scribe bump can break
+wfl --test TestPrograms/util.test.wfl    # …and the rest (see Tests), then:
+git commit -m "chore(scribe): update lib/scribe"
+```
+
+`.github/workflows/update-scribe.yml` does the same thing on a weekly schedule
+(and on demand via *Run workflow*), opening a PR with the Scribe commits it
+picked up. Delete that file if you would rather bump by hand only.
+
+Working on Scribe itself? `lib/scribe` is a normal git checkout — commit and
+push from inside it, then bump the pin here.
+
 ## Security notes
 
 - Passwords are stored only as Argon2id hashes; login uses `verify_password`.
@@ -156,8 +198,10 @@ wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
 - **CSRF**: every admin POST form carries a per-session token (hidden
   `csrf_token` field), validated with `constant_time_equals` before anything
   mutates; the login form uses a double-submit cookie since no session exists
-  yet. Every mutating route (update, delete, logout) is POST-only — a GET
-  returns 405 so nothing can slip past the token check.
+  yet. Every mutating route is POST-only, so nothing can slip past the token
+  check: a GET on an update or delete route returns 405, and a GET on
+  `/admin/logout` is a no-op that redirects to `/admin` (it does *not* end the
+  session, so an `<img src="/admin/logout">` cannot log anyone out).
 - **Rate limiting**: more than 10 failed logins from one IP within 15 minutes
   → `429` on `/admin/login` until the window passes. (A crude in-app limiter —
   see `docs/ARCHITECTURE.md` for why a robust one wants upstream support.)
@@ -168,7 +212,8 @@ wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
 ## Built on
 
 - **WFL** — the language, runtime, built-in web server, SQLite, and crypto.
-- **Scribe** — Twig-style templating (vendored at `lib/scribe.wfl`).
+- **Scribe** — Twig-style templating, tracked as a git submodule at `lib/scribe`
+  (see [Keeping Scribe current](#keeping-scribe-current)).
 - **WFL Design System** — brand tokens, fonts, and the logo mark (`static/ds/`).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit and the

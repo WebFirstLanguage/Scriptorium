@@ -123,6 +123,21 @@ describe "Scriptorium data layer":
         close database conn
     end test
 
+    test "migrate is idempotent after a legacy upgrade":
+        // The second run must see csrf_token already present and skip the ALTER.
+        // Re-running it would fail with "duplicate column name" — which is only
+        // harmless while the ALTER is wrapped in a catch-everything handler.
+        open database at "sqlite::memory:" as conn
+        store legacy as execute conn with "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+        store m1 as db_migrate of conn
+        store m2 as db_migrate of conn
+        store m3 as db_migrate of conn
+        store cols as query conn with "SELECT count(*) AS n FROM pragma_table_info('sessions') WHERE name = 'csrf_token'"
+        store col_row as cols[0]
+        expect col_row["n"] to equal 1
+        close database conn
+    end test
+
     test "media: create, list newest first, fetch by id, delete":
         open database at "sqlite::memory:" as conn
         store m as db_migrate of conn

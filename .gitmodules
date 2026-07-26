@@ -1,0 +1,4 @@
+[submodule "lib/scribe"]
+	path = lib/scribe
+	url = https://github.com/WebFirstLanguage/Scribe.git
+	branch = main

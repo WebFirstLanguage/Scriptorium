@@ -3,7 +3,7 @@
 //
 // Covers the markdown filter (blockquotes, fenced code) and the safe-marker
 // propagation that keeps `markdown | striptags | truncate` from double-escaping.
-include from "../lib/scribe.wfl"
+include from "../lib/scribe/src/scribe.wfl"
 
 describe "Scribe markdown and filters":
 
