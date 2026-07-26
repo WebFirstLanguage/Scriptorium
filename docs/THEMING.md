@@ -17,6 +17,15 @@ a sidebar), but it may never drop one of the three.
 The `themes/base/` theme is the reference implementation. It is deliberately
 small — read it alongside this doc.
 
+> **New projects use a different folder shape.** This doc describes
+> Scriptorium's current themes: `sections/` (header + footer) plus `templates/`
+> (assembler + bodies). Per [`PROJECT-LAYOUT.md`](PROJECT-LAYOUT.md), a **new**
+> project makes the three regions literal directories — `header/`, `body/`,
+> `footer/` — with `skeleton.html` and `layout.html` at the theme root. The
+> mental model below is identical; only the folders move. Note that shape needs
+> one engine change first: `render_public` currently hardcodes the
+> `themes/base/templates/` prefix (see PROJECT-LAYOUT.md §6.1).
+
 ---
 
 ## 1. The parts

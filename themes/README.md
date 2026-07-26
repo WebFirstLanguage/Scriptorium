@@ -15,6 +15,11 @@ never fewer. The full contract — the assembler, the `site.*` context, the
 styling rules, and a new‑theme checklist — is in
 [`../docs/THEMING.md`](../docs/THEMING.md).
 
+Themes in a **new** project use literal `header/`, `body/`, and `footer/`
+directories instead of `sections/` + `templates/` — see
+[`../docs/PROJECT-LAYOUT.md`](../docs/PROJECT-LAYOUT.md) §2. Themes here keep
+the shape below.
+
 ```
 base/
   sections/               ← reusable section library

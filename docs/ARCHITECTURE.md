@@ -4,6 +4,13 @@ Scriptorium is a single WFL program. This note explains how the pieces fit and,
 importantly, the **WFL constraints** that shaped the design — so the structure
 reads as deliberate rather than accidental.
 
+> **This describes Scriptorium as built, not the house standard.** The layout a
+> *new* WFL project should adopt is [`PROJECT-LAYOUT.md`](PROJECT-LAYOUT.md).
+> The constraints catalogued below — especially #2, includes forming a tree so
+> diamonds break — are what that policy is built around; its composition-root
+> rule exists to stop a new project inheriting the 51 KB `main.wfl` this one
+> ended up with. Scriptorium is grandfathered and is not being retrofitted.
+
 ## The stack
 
 ```

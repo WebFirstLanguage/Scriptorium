@@ -150,8 +150,15 @@ admin/templates       Admin panel templates
 static/               WFL Design System (ds/) + theme.css + admin.css
 static/uploads/       Uploaded media (default; relocates under data_dir when set)
 TestPrograms/         WFL test suites (wfl --test)
-docs/                 Architecture notes + THEMING.md + screenshots
+docs/                 Architecture notes + THEMING.md + PROJECT-LAYOUT.md + screenshots
 ```
+
+> **Building something new on WFL or Scriptorium?** The layout above is
+> Scriptorium's own, and it predates the house standard.
+> [`docs/PROJECT-LAYOUT.md`](docs/PROJECT-LAYOUT.md) is the shape a **new**
+> project should take — `src/` modules as containers behind a single composition
+> root, themes split into `header/ body/ footer/`, `tests/` mirroring `src/`.
+> Scriptorium is explicitly grandfathered and is not being retrofitted.
 
 ## Tests
 
