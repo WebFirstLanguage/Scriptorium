@@ -120,10 +120,13 @@ All state lives in the **path** (or in POST bodies) — stable, shareable URLs.
 | GET | `/assets/*` | Static files (CSS, fonts, logo, uploads) |
 | GET/POST | `/admin/login` · `/admin/logout` | Auth (logout is POST-only) |
 | GET | `/admin` | Dashboard |
-| GET/POST | `/admin/posts` · `/admin/posts/new` · `/admin/posts/:id/edit` · `/admin/posts/:id` · `/admin/posts/:id/delete` | Posts CRUD |
-| GET/POST | `/admin/pages…` | Pages CRUD (same shape) |
-| GET/POST | `/admin/media` · `/admin/media/upload` · `/admin/media/:id/delete` | Media library + uploads |
-| GET/POST | `/admin/users…` | Users CRUD *(admin only)* |
+| GET | `/admin/posts` · `/admin/posts/new` · `/admin/posts/:id/edit` | Posts: list, new form, edit form |
+| POST | `/admin/posts` · `/admin/posts/:id` · `/admin/posts/:id/delete` | Posts: create, update, delete *(GET → 405)* |
+| GET/POST | `/admin/pages…` | Pages CRUD (same shape, same method split) |
+| GET | `/admin/media` | Media library |
+| POST | `/admin/media/upload` | Upload *(GET redirects to `/admin/media`)* |
+| POST | `/admin/media/:id/delete` | Delete *(GET → 405)* |
+| GET/POST | `/admin/users…` | Users CRUD *(admin only; delete is POST-only)* |
 | GET/POST | `/admin/settings` | Site settings *(admin only)* |
 
 Every admin POST must carry the session's CSRF token (rendered into each form
@@ -174,7 +177,8 @@ tested against this Scriptorium — but it also means Scribe moving forward does
 ```sh
 scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
 scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
-wfl --test TestPrograms/util.test.wfl   # …and the rest, before committing
+wfl --test TestPrograms/scribe.test.wfl  # the suite a Scribe bump can break
+wfl --test TestPrograms/util.test.wfl    # …and the rest (see Tests), then:
 git commit -m "chore(scribe): update lib/scribe"
 ```
 

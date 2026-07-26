@@ -54,6 +54,17 @@ if git -C lib/scribe merge-base --is-ancestor "$after" "$before"; then
     exit 0
 fi
 
+# Neither is an ancestor of the other: the histories have diverged, so moving to
+# `after` would silently drop the commits unique to the pinned revision. That is
+# a maintainer decision, not something a bump script should make.
+if ! git -C lib/scribe merge-base --is-ancestor "$before" "$after"; then
+    echo "Scribe $branch has diverged from the pinned revision — refusing to bump." >&2
+    echo "  pinned only: $(git -C lib/scribe rev-list --count "$after..$before") commit(s)" >&2
+    echo "  $branch only: $(git -C lib/scribe rev-list --count "$before..$after") commit(s)" >&2
+    echo "Resolve upstream, then re-run. The pin is unchanged." >&2
+    exit 1
+fi
+
 echo "Scribe $branch has moved:"
 git -C lib/scribe log --oneline --no-decorate "$before..$after" | sed 's/^/    /'
 

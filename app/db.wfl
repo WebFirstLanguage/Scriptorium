@@ -24,16 +24,20 @@ define action called db_migrate with parameters conn:
     // The rate limiter filters on (ip, attempted_at) on every login POST —
     // exactly when the table is growing fastest — so keep that path indexed.
     store r7b as execute conn with "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"
-    // Databases created before the CSRF work lack sessions.csrf_token; the
-    // ALTER fails harmlessly once the column exists (no IF NOT EXISTS in SQLite).
-    // The two branches bind different names on purpose: WFL's analyzer treats
-    // the `try` body as an enclosing scope for `when error`, so re-using one
-    // name across them is rejected as a redefinition.
-    try:
+    // Databases created before the CSRF work lack sessions.csrf_token. SQLite
+    // has no ADD COLUMN IF NOT EXISTS, so ask the schema whether the column is
+    // there and only ALTER when it is missing.
+    //
+    // This deliberately does NOT wrap the ALTER in a `try`. Catching every error
+    // would treat "column already exists" and "database is locked / read-only"
+    // identically, so migration would report success on a database it had failed
+    // to upgrade — and the failure would resurface later as session_create
+    // blowing up on a missing csrf_token column, far from the cause.
+    store csrf_cols as query conn with "SELECT count(*) AS n FROM pragma_table_info('sessions') WHERE name = 'csrf_token'"
+    store csrf_col_row as csrf_cols[0]
+    check if csrf_col_row["n"] is equal to 0:
         store r8 as execute conn with "ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''"
-    when error:
-        store r8_already_present as yes
-    end try
+    end check
     return yes
 end action
 

@@ -4,8 +4,13 @@
 # checkout reproducible — but it also means Scribe moving forward does not move
 # Scriptorium. This job does the moving: weekly (or on demand) it bumps
 # lib/scribe to the tip of Scribe's main and opens a PR with the intervening
-# Scribe commits in the body, so the bump is reviewed and CI-visible rather
-# than silent.
+# Scribe commits in the body, so the bump is reviewed rather than silent.
+#
+# Note on CI: the PR is opened with the built-in GITHUB_TOKEN, and GitHub does
+# not fire `push` / `pull_request` workflow events for anything that token
+# creates. No test workflow exists in this repo today, so nothing is missed —
+# but if one is added, it will NOT run on these auto-generated PRs. Swap in a
+# PAT or GitHub App token at that point if you want checks on them.
 #
 # To bump by hand instead, run scripts/update-scribe.sh.
 name: Update Scribe
@@ -51,6 +56,15 @@ jobs:
             echo "changed=no" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Diverged: moving to main's tip would drop the commits unique to the
+          # pinned revision. Fail loudly rather than open a regression PR.
+          if ! git -C lib/scribe merge-base --is-ancestor "$before" "$after"; then
+            echo "::error::Scribe main has diverged from the pinned revision;" \
+                 "pinned-only $(git -C lib/scribe rev-list --count "$after..$before")," \
+                 "main-only $(git -C lib/scribe rev-list --count "$before..$after")." \
+                 "Refusing to bump — resolve upstream first."
+            exit 1
+          fi
           git -C lib/scribe log --oneline --no-decorate "$before..$after" > /tmp/scribe-log.txt
           git -C lib/scribe checkout --quiet --detach "$after"
           {
@@ -67,12 +81,29 @@ jobs:
           AFTER: ${{ steps.bump.outputs.after }}
         run: |
           branch="chore/update-scribe-$AFTER"
+
+          # A later run sees the same AFTER while the previous PR is still open,
+          # and would push a branch that already exists. If a PR for it is open,
+          # this run has nothing to add. If the branch exists with no open PR it
+          # is stale (PR closed, or a run that died before opening one), so it is
+          # safe to replace.
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "PR already open for $branch — nothing to do."
+            exit 0
+          fi
+          force=""
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Stale $branch with no open PR — replacing it."
+            force="--force-with-lease"
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add lib/scribe
           git commit -m "chore(scribe): update lib/scribe to $AFTER"
-          git push -u origin "$branch"
+          # shellcheck disable=SC2086
+          git push -u $force origin "$branch"
 
           {
             echo "Bumps the \`lib/scribe\` submodule from \`$BEFORE\` to \`$AFTER\`."
