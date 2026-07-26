@@ -194,8 +194,10 @@ push from inside it, then bump the pin here.
 - **CSRF**: every admin POST form carries a per-session token (hidden
   `csrf_token` field), validated with `constant_time_equals` before anything
   mutates; the login form uses a double-submit cookie since no session exists
-  yet. Every mutating route (update, delete, logout) is POST-only — a GET
-  returns 405 so nothing can slip past the token check.
+  yet. Every mutating route is POST-only, so nothing can slip past the token
+  check: a GET on an update or delete route returns 405, and a GET on
+  `/admin/logout` is a no-op that redirects to `/admin` (it does *not* end the
+  session, so an `<img src="/admin/logout">` cannot log anyone out).
 - **Rate limiting**: more than 10 failed logins from one IP within 15 minutes
   → `429` on `/admin/login` until the window passes. (A crude in-app limiter —
   see `docs/ARCHITECTURE.md` for why a robust one wants upstream support.)

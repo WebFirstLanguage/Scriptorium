@@ -824,7 +824,12 @@ end action
 // ---------------------------------------------------------------------------
 define action called handle_media_list with parameters db and req and user and flash_msg:
     store site_map as site_context of db and user
-    store rows as media_list_all of db
+    // Seed with a list literal before assigning the query result: an action's
+    // return type is `Any` at the call site, and WFL >= 26.7.48 rejects `Any` as
+    // a for-each collection. Declaring the list first pins the type — the same
+    // shape handle_media_upload already uses for `parts`. See issue #9.
+    store rows as []
+    change rows to media_list_all of db
     store items as []
     for each media_row in rows:
         create map item:

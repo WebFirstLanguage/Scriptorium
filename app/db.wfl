@@ -26,10 +26,13 @@ define action called db_migrate with parameters conn:
     store r7b as execute conn with "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"
     // Databases created before the CSRF work lack sessions.csrf_token; the
     // ALTER fails harmlessly once the column exists (no IF NOT EXISTS in SQLite).
+    // The two branches bind different names on purpose: WFL's analyzer treats
+    // the `try` body as an enclosing scope for `when error`, so re-using one
+    // name across them is rejected as a redefinition.
     try:
         store r8 as execute conn with "ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''"
     when error:
-        store r8 as no
+        store r8_already_present as yes
     end try
     return yes
 end action
@@ -89,7 +92,8 @@ define action called user_by_id with parameters conn and the_id:
 end action
 
 define action called user_list with parameters conn:
-    return query conn with "SELECT id, username, role, created_at FROM users ORDER BY id"
+    store rows as query conn with "SELECT id, username, role, created_at FROM users ORDER BY id"
+    return rows
 end action
 
 define action called user_set_role with parameters conn and the_id and role_name:
@@ -159,7 +163,8 @@ define action called media_create with parameters conn and filename and original
 end action
 
 define action called media_list_all with parameters conn:
-    return query conn with "SELECT m.id AS id, m.filename AS filename, m.original_name AS original_name, m.content_type AS content_type, m.size AS size, m.uploader_id AS uploader_id, m.created_at AS created_at, u.username AS uploader_name FROM media m LEFT JOIN users u ON u.id = m.uploader_id ORDER BY m.created_at DESC, m.id DESC"
+    store rows as query conn with "SELECT m.id AS id, m.filename AS filename, m.original_name AS original_name, m.content_type AS content_type, m.size AS size, m.uploader_id AS uploader_id, m.created_at AS created_at, u.username AS uploader_name FROM media m LEFT JOIN users u ON u.id = m.uploader_id ORDER BY m.created_at DESC, m.id DESC"
+    return rows
 end action
 
 define action called media_by_id with parameters conn and the_id:
@@ -198,7 +203,8 @@ end action
 
 // Published posts, newest first, one page at a time.
 define action called post_list_published with parameters conn and page_limit and page_offset:
-    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.created_at AS created_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.status = 'published' ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?" and parameters [page_limit and page_offset]
+    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.created_at AS created_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.status = 'published' ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?" and parameters [page_limit and page_offset]
+    return rows
 end action
 
 define action called post_count_published with parameters conn:
@@ -209,11 +215,13 @@ end action
 
 // All posts for the admin list (optionally scoped to one author).
 define action called post_list_all with parameters conn:
-    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id ORDER BY p.updated_at DESC, p.id DESC"
+    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id ORDER BY p.updated_at DESC, p.id DESC"
+    return rows
 end action
 
 define action called post_list_by_author with parameters conn and author_id:
-    return query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.author_id = ? ORDER BY p.updated_at DESC, p.id DESC" and parameters [author_id]
+    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.author_id = ? ORDER BY p.updated_at DESC, p.id DESC" and parameters [author_id]
+    return rows
 end action
 
 // ---------------------------------------------------------------------------
@@ -242,16 +250,19 @@ define action called page_by_slug with parameters conn and slug:
 end action
 
 define action called page_list_all with parameters conn:
-    return query conn with "SELECT id, slug, title, status, updated_at FROM pages ORDER BY title"
+    store rows as query conn with "SELECT id, slug, title, status, updated_at FROM pages ORDER BY title"
+    return rows
 end action
 
 define action called page_list_by_author with parameters conn and author_id:
-    return query conn with "SELECT id, slug, title, status, updated_at FROM pages WHERE author_id = ? ORDER BY title" and parameters [author_id]
+    store rows as query conn with "SELECT id, slug, title, status, updated_at FROM pages WHERE author_id = ? ORDER BY title" and parameters [author_id]
+    return rows
 end action
 
 // Published pages, for the site nav.
 define action called page_list_published with parameters conn:
-    return query conn with "SELECT id, slug, title FROM pages WHERE status = 'published' ORDER BY title"
+    store rows as query conn with "SELECT id, slug, title FROM pages WHERE status = 'published' ORDER BY title"
+    return rows
 end action
 
 // ---------------------------------------------------------------------------

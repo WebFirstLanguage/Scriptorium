@@ -116,9 +116,11 @@ noted inline:
   rendered form mints a token, sets it as a short-lived `csrf` cookie and
   embeds it as the hidden field; the POST must present both, matching.
   Because the gate only inspects POSTs, every mutating route — updates,
-  deletes, logout — is POST-only and answers anything else with 405;
-  otherwise a plain GET (a prefetcher, a crawler, an `<img src=…>`) would
-  bypass the token check entirely.
+  deletes, logout — is POST-only; otherwise a plain GET (a prefetcher, a
+  crawler, an `<img src=…>`) would bypass the token check entirely. Update and
+  delete routes answer a non-POST with 405. `/admin/logout` instead redirects a
+  GET to `/admin` without touching the session — same guarantee (the GET cannot
+  log anyone out), friendlier to a stale bookmark.
 - **Login rate limiting.** Failed logins are recorded per client IP in
   `login_attempts` (timestamps are SQL-side, like everything else). More than
   10 failures from one address inside 15 minutes → `429` for that address,
