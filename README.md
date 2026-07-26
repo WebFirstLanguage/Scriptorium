@@ -44,8 +44,18 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 
 ## Quick start
 
-You need the WFL interpreter (`wfl`) on your PATH. Then, **from the repository
-root** (template and asset paths resolve relative to the working directory):
+You need the WFL interpreter (`wfl`) on your PATH. Scriptorium keeps the
+[Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
+submodule, so clone with submodules:
+
+```sh
+git clone --recurse-submodules https://github.com/WebFirstLanguage/Scriptorium.git
+```
+
+(Already cloned without them? `git submodule update --init --recursive`.)
+
+Then, **from the repository root** (template and asset paths resolve relative to
+the working directory):
 
 ```sh
 wfl main.wfl
@@ -129,7 +139,8 @@ app/
   db.wfl              SQLite schema + every query/execute helper
   auth.wfl            passwords, sessions, CSRF tokens, role checks
   render.wfl          shared "site" context + Scribe wrappers
-lib/scribe.wfl        vendored Scribe template engine
+lib/scribe/           Scribe template engine — git submodule of WebFirstLanguage/Scribe
+scripts/update-scribe.sh  Bump the Scribe submodule to the newest upstream commit
 themes/base/          Default theme: sections/ (header, footer) + templates (skeleton, assembler, bodies)
 themes/README.md      Theme layout at a glance
 admin/templates       Admin panel templates
@@ -146,6 +157,33 @@ wfl --test TestPrograms/util.test.wfl   # helpers (slugify, file_ext, parsing, �
 wfl --test TestPrograms/db.test.wfl     # data layer against sqlite::memory:
 wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
 ```
+
+## Keeping Scribe current
+
+The template engine is not vendored as a copied file any more — `lib/scribe` is
+a **git submodule** pointing at
+[WebFirstLanguage/Scribe](https://github.com/WebFirstLanguage/Scribe), and
+`app/render.wfl` includes it from `../lib/scribe/src/scribe.wfl`. Improvements
+to Scribe now flow into Scriptorium instead of having to be re-applied by hand.
+
+One thing to know up front: **a submodule records one exact Scribe commit.**
+That is what makes a checkout reproducible — everyone gets the Scribe that was
+tested against this Scriptorium — but it also means Scribe moving forward does
+*not* move Scriptorium on its own. Something has to bump the pin:
+
+```sh
+scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
+scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
+wfl --test TestPrograms/util.test.wfl   # …and the rest, before committing
+git commit -m "chore(scribe): update lib/scribe"
+```
+
+`.github/workflows/update-scribe.yml` does the same thing on a weekly schedule
+(and on demand via *Run workflow*), opening a PR with the Scribe commits it
+picked up. Delete that file if you would rather bump by hand only.
+
+Working on Scribe itself? `lib/scribe` is a normal git checkout — commit and
+push from inside it, then bump the pin here.
 
 ## Security notes
 
@@ -168,7 +206,8 @@ wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
 ## Built on
 
 - **WFL** — the language, runtime, built-in web server, SQLite, and crypto.
-- **Scribe** — Twig-style templating (vendored at `lib/scribe.wfl`).
+- **Scribe** — Twig-style templating, tracked as a git submodule at `lib/scribe`
+  (see [Keeping Scribe current](#keeping-scribe-current)).
 - **WFL Design System** — brand tokens, fonts, and the logo mark (`static/ds/`).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit and the

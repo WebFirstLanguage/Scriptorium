@@ -6,8 +6,12 @@
 // current user) so every template can rely on it.
 //
 // Dependency graph:  render -> auth -> db -> util   and   render -> lib/scribe
+//
+// Scribe is a git submodule (upstream: WebFirstLanguage/Scribe), so this path
+// only resolves once the submodule is checked out:
+//     git submodule update --init --recursive
 include from "auth.wfl"
-include from "../lib/scribe.wfl"
+include from "../lib/scribe/src/scribe.wfl"
 
 // Shared site context, present on every page as `site`.
 define action called site_context with parameters conn and user:

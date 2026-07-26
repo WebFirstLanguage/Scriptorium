@@ -26,7 +26,7 @@ Library layers, each pulled in with `include from` (see the include rule below):
 
 ```
 render.wfl ── auth.wfl ── db.wfl ── util.wfl
-     └──────── lib/scribe.wfl
+     └──────── lib/scribe/src/scribe.wfl   (git submodule)
 main.wfl ── render.wfl   (+ defines the router and every request handler)
 ```
 
@@ -175,7 +175,12 @@ Timestamps are filled by SQLite (`DEFAULT (datetime('now'))` and explicit
 
 ## Templating
 
-Scribe is a Twig-style engine (vendored at `lib/scribe.wfl`). Template paths
+Scribe is a Twig-style engine, tracked as a **git submodule** at `lib/scribe`
+(upstream: [WebFirstLanguage/Scribe](https://github.com/WebFirstLanguage/Scribe));
+`render.wfl` includes it from `../lib/scribe/src/scribe.wfl`. A submodule pins
+one exact Scribe commit, so a checkout is reproducible — bumping that pin to a
+newer Scribe is a deliberate step (`scripts/update-scribe.sh`, or the weekly
+`update-scribe` workflow), not something that happens on its own. Template paths
 resolve **relative to the process working directory**, which is why Scriptorium
 must be run from the repo root and templates reference each other by root paths
 (`{% extends "themes/base/templates/skeleton.html" %}`). Every `{{ … }}` is
