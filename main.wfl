@@ -7,8 +7,8 @@
 //     wfl main.wfl
 //
 // It opens a SQLite database (scriptorium.db, auto-created), serves the public
-// site + a design-system-styled admin panel, and — on first run — seeds an
-// admin account and prints its one-time password.
+// site + a design-system-styled admin panel, and — on first run — locks the
+// site behind /install until an operator creates the first admin in the browser.
 //
 // The whole app layers on one include: render -> auth -> db -> util, plus the
 // vendored Scribe template engine. Because WFL's `header`, `path`, and `method`
@@ -321,6 +321,89 @@ define action called handle_logout with parameters db and req and cookie_hdr:
     store gone as logout_by_cookie of db and cookie_hdr
     store cleared_cookie as "sid=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
     call send_redirect_cookie with req and "/admin/login" and cleared_cookie
+    return yes
+end action
+
+// ---------------------------------------------------------------------------
+// First-run installer — double-submit CSRF, same rate limiter as login.
+// ---------------------------------------------------------------------------
+define action called render_install with parameters db and req and site_title and site_tagline and username and flash_msg:
+    store site_map as site_context of db and nothing
+    store install_tok as generate_csrf_token
+    create map install_form:
+        "site_title" is site_title
+        "site_tagline" is site_tagline
+        "username" is username
+    end map
+    create map ctx:
+        "site" is site_map
+        "form" is install_form
+        "csrf" is install_tok
+        "flash" is make_flash of "error" and flash_msg
+    end map
+    store html as render_admin of "install.html" and ctx
+    store csrf_cookie as "csrf=" with install_tok with "; HttpOnly; Path=/install; SameSite=Lax; Max-Age=600"
+    call send_html_cookie with req and html and csrf_cookie
+    return yes
+end action
+
+define action called handle_install_form with parameters db and req:
+    store site_title as setting_get of db and "site_title" and "Scriptorium"
+    store site_tagline as setting_get of db and "site_tagline" and "Words, well kept."
+    call render_install with db and req and site_title and site_tagline and "" and ""
+    return yes
+end action
+
+define action called handle_install_post with parameters db and req and req_body and cookie_hdr and req_ip:
+    check if (install_is_done of db) is equal to yes:
+        call send_redirect with req and "/"
+        return yes
+    end check
+    store recent_failures as login_attempts_recent of db and req_ip
+    check if recent_failures is greater than or equal to 10:
+        call send_text_status with req and "429 — too many attempts from your address. Wait 15 minutes and try again." and 429
+        return yes
+    end check
+    store f as parse_form_urlencoded of req_body
+    store cookie_tok as login_csrf_from_cookie of cookie_hdr
+    store form_tok as field_or of f and "csrf_token" and ""
+    store csrf_valid as no
+    check if (cookie_tok is not equal to "") and (form_tok is not equal to ""):
+        change csrf_valid to constant_time_equals of cookie_tok and form_tok
+    end check
+    check if csrf_valid is not equal to yes:
+        call render_install with db and req and "" and "" and "" and "That form had expired — please try again."
+        return yes
+    end check
+    store raw_title as field_or of f and "site_title" and ""
+    store raw_tagline as field_or of f and "site_tagline" and ""
+    store raw_username as field_or of f and "username" and ""
+    store password as field_or of f and "password" and ""
+    store password_confirm as field_or of f and "password_confirm" and ""
+    store site_title as trim of raw_title
+    store username as trim of raw_username
+    store problem as install_validate of site_title and username and password and password_confirm
+    check if problem is not equal to "":
+        call login_attempt_record with db and req_ip
+        call render_install with db and req and site_title and raw_tagline and username and problem
+        return yes
+    end check
+    store applied as no
+    try:
+        store password_hash as hash_password of password
+        change applied to install_apply of db and site_title and raw_tagline and username and password_hash
+    when error:
+        change applied to no
+    end try
+    check if applied is not equal to yes:
+        call login_attempt_record with db and req_ip
+        call render_install with db and req and site_title and raw_tagline and username and "That username is already taken."
+        return yes
+    end check
+    call login_attempts_clear with db and req_ip
+    store new_user as user_by_username of db and username
+    store sid as session_start of db and new_user["id"]
+    call send_redirect_cookie with req and "/admin" and (session_cookie of sid)
     return yes
 end action
 
@@ -1173,6 +1256,30 @@ end action
 // ---------------------------------------------------------------------------
 define action called dispatch with parameters db and req and req_method and req_path and req_body and cookie_hdr and req_ip:
     store user as current_user of db and cookie_hdr
+    // Assets always serve so the installer (and the rest of the site) can
+    // load CSS, fonts, and the brand mark before setup finishes.
+    check if starts_with of req_path and "/assets/":
+        call serve_asset with req and req_path
+        return yes
+    end check
+    store already_installed as install_is_done of db
+    check if already_installed is not equal to yes:
+        check if req_path is equal to "/install":
+            check if req_method is equal to "POST":
+                call handle_install_post with db and req and req_body and cookie_hdr and req_ip
+            otherwise:
+                call handle_install_form with db and req
+            end check
+        otherwise:
+            call send_redirect with req and "/install"
+        end check
+        return yes
+    end check
+    // Installed: never process a late POST to /install.
+    check if req_path is equal to "/install":
+        call send_redirect with req and "/"
+        return yes
+    end check
     route req_path:
         when starts with "/assets/":
             call serve_asset with req and req_path
@@ -1187,7 +1294,7 @@ define action called dispatch with parameters db and req and req_method and req_
 end action
 
 // ===========================================================================
-// Boot: resolve the data directory, open DB, migrate, seed, then serve.
+// Boot: resolve the data directory, open DB, migrate, backfill, then serve.
 // ===========================================================================
 
 // Consolidate mutable state under one directory when `data_dir` is set in
@@ -1217,17 +1324,13 @@ store sd1 as setting_default of db and "site_title" and "Scriptorium"
 store sd2 as setting_default of db and "site_tagline" and "Words, well kept."
 store sd3 as setting_default of db and "posts_per_page" and "5"
 
+// Existing sites (and a crash after user_create) already have users but may
+// lack the installed flag — lock the wizard so they never see it.
 store existing_users as user_count of db
-check if existing_users is equal to 0:
-    store admin_pw as secure_random_bytes of 9
-    store admin_hash as hash_password of admin_pw
-    store seeded as user_create of db and "admin" and admin_hash and "admin"
-    display "=================================================="
-    display " Scriptorium — first run: seeded an admin account"
-    display "   username:  admin"
-    display "   password:  " with admin_pw
-    display "   (shown once — sign in and add users under Users)"
-    display "=================================================="
+check if (install_is_done of db) is not equal to yes:
+    check if existing_users is greater than 0:
+        call install_mark_done with db
+    end check
 end check
 
 // Housekeeping: drop expired sessions and stale login-attempt records.
@@ -1242,7 +1345,12 @@ otherwise:
 end check
 
 listen on port 8080 as web_server
-display "Scriptorium is running at http://127.0.0.1:8080  (admin: /admin)"
+display "Scriptorium is running at http://127.0.0.1:8080"
+check if (install_is_done of db) is equal to yes:
+    display "  admin: /admin"
+otherwise:
+    display "  First run — open http://127.0.0.1:8080/install to set up your site"
+end check
 
 main loop:
     wait for request comes in on web_server as req

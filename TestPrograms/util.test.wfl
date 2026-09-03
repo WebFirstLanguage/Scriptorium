@@ -74,4 +74,36 @@ describe "Scriptorium utilities":
         expect config_value_from of "" and "data_dir" and "./data" to equal "./data"
     end test
 
+    test "install_validate rejects an empty title":
+        expect install_validate of "" and "ada" and "secret" and "secret" to equal "Site title is required."
+    end test
+
+    test "install_validate rejects a whitespace-only title":
+        expect install_validate of "   " and "ada" and "secret" and "secret" to equal "Site title is required."
+    end test
+
+    test "install_validate rejects an empty username":
+        expect install_validate of "My Site" and "" and "secret" and "secret" to equal "Username is required."
+    end test
+
+    test "install_validate rejects a whitespace-only username":
+        expect install_validate of "My Site" and "  " and "secret" and "secret" to equal "Username is required."
+    end test
+
+    test "install_validate rejects an empty password":
+        expect install_validate of "My Site" and "ada" and "" and "" to equal "Password is required."
+    end test
+
+    test "install_validate does not trim passwords":
+        expect install_validate of "My Site" and "ada" and "  secret" and "secret" to equal "Passwords do not match."
+    end test
+
+    test "install_validate rejects a password mismatch":
+        expect install_validate of "My Site" and "ada" and "secret" and "other" to equal "Passwords do not match."
+    end test
+
+    test "install_validate accepts a valid form and ignores surrounding title and username space":
+        expect install_validate of "  My Site  " and "  ada  " and "secret" and "secret" to equal ""
+    end test
+
 end describe

@@ -188,4 +188,39 @@ describe "Scriptorium data layer":
         close database conn
     end test
 
+    test "install_is_done is no until marked":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        expect install_is_done of conn to equal no
+        store marked as install_mark_done of conn
+        expect install_is_done of conn to equal yes
+        close database conn
+    end test
+
+    test "install_apply creates an admin, writes site fields, and marks done":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store applied as install_apply of conn and "My Site" and "A tagline" and "ada" and "hash1"
+        expect applied to equal yes
+        expect install_is_done of conn to equal yes
+        expect setting_get of conn and "site_title" and "" to equal "My Site"
+        expect setting_get of conn and "site_tagline" and "" to equal "A tagline"
+        store u as user_by_username of conn and "ada"
+        expect u["username"] to equal "ada"
+        expect u["role"] to equal "admin"
+        expect u["password_hash"] to equal "hash1"
+        close database conn
+    end test
+
+    test "install_apply returns no when the username is taken":
+        open database at "sqlite::memory:" as conn
+        store m as db_migrate of conn
+        store first as user_create of conn and "ada" and "h" and "admin"
+        store applied as install_apply of conn and "My Site" and "A tagline" and "ada" and "hash1"
+        expect applied to equal no
+        expect install_is_done of conn to equal no
+        expect setting_get of conn and "site_title" and "Fallback" to equal "Fallback"
+        close database conn
+    end test
+
 end describe

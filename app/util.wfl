@@ -151,3 +151,23 @@ define action called config_value_from with parameters cfg_text and cfg_key and 
     end for
     return fallback
 end action
+
+// install_validate: first-run installer field checks. Pure (no I/O).
+// Title and username are trimmed; passwords are compared as submitted.
+define action called install_validate with parameters site_title and username and password and password_confirm:
+    store trimmed_title as trim of site_title
+    store trimmed_username as trim of username
+    check if trimmed_title is equal to "":
+        return "Site title is required."
+    end check
+    check if trimmed_username is equal to "":
+        return "Username is required."
+    end check
+    check if password is equal to "":
+        return "Password is required."
+    end check
+    check if password is not equal to password_confirm:
+        return "Passwords do not match."
+    end check
+    return ""
+end action

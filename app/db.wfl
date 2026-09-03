@@ -73,6 +73,41 @@ define action called setting_default with parameters conn and setting_key and se
 end action
 
 // ---------------------------------------------------------------------------
+// First-run installer lock (`settings.installed` = "yes").
+// ---------------------------------------------------------------------------
+define action called install_is_done with parameters conn:
+    store flag as setting_get of conn and "installed" and ""
+    check if flag is equal to "yes":
+        return yes
+    end check
+    return no
+end action
+
+define action called install_mark_done with parameters conn:
+    call setting_set with conn and "installed" and "yes"
+    return yes
+end action
+
+// Create the first admin, write site title/tagline, then lock the wizard.
+// Unique-username failure (and any other user_create error) returns no and
+// leaves settings and the installed flag untouched.
+define action called install_apply with parameters conn and site_title and site_tagline and username and password_hash:
+    store applied as yes
+    try:
+        call user_create with conn and username and password_hash and "admin"
+    when error:
+        change applied to no
+    end try
+    check if applied is equal to no:
+        return no
+    end check
+    call setting_set with conn and "site_title" and site_title
+    call setting_set with conn and "site_tagline" and site_tagline
+    call install_mark_done with conn
+    return yes
+end action
+
+// ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
 define action called user_count with parameters conn:

@@ -19,10 +19,11 @@ Browser
    ▼
 main.wfl ── listen on port ── main loop: wait for request ── route ──┐
    │                                                                  │
-   ├─ /assets/*   → serve_asset (read binary + mime_type)            │
-   │                 └─ /assets/uploads/* = media uploaded via admin │
-   ├─ /, /post/:slug, /page/:slug → dispatch_public → Scribe → HTML  │
-   └─ /admin/*    → dispatch_admin (session + CSRF + role gate)      │
+  ├─ /assets/*   → serve_asset (read binary + mime_type)            │
+  │                 └─ /assets/uploads/* = media uploaded via admin │
+  ├─ /install    → first-run wizard (locked once `installed` = yes) │
+  ├─ /, /post/:slug, /page/:slug → dispatch_public → Scribe → HTML  │
+  └─ /admin/*    → dispatch_admin (session + CSRF + role gate)      │
                                      │                                │
                                      ▼                                │
                               SQLite (scriptorium.db) ◄───────────────┘
@@ -38,19 +39,21 @@ main.wfl ── render.wfl   (+ defines the router and every request handler)
 ```
 
 - **util.wfl** — `slugify`, `to_int`, `field_or`, `truncate_text`, `file_ext`,
-  `file_stem`. Form/cookie parsing is *not* here: WFL's stdlib already ships
-  `parse_form_urlencoded` and `parse_cookies` (both percent-decode), so we use
-  those.
+  `file_stem`, `config_value_from`, `install_validate`. Form/cookie parsing is
+  *not* here: WFL's stdlib already ships `parse_form_urlencoded` and
+  `parse_cookies` (both percent-decode), so we use those.
 - **db.wfl** — the SQLite schema (idempotent `CREATE TABLE IF NOT EXISTS`) and
   every `query`/`execute` the app runs. Helpers take the connection handle as a
-  parameter, so the data layer is testable against `sqlite::memory:`.
+  parameter, so the data layer is testable against `sqlite::memory:`. Includes
+  the installer lock (`install_is_done` / `install_mark_done` / `install_apply`).
 - **auth.wfl** — `hash_password`/`verify_password`, session create/lookup/delete
   (each session carries a CSRF token, validated by `csrf_ok`), and the
   `is_admin` / `can_edit` role checks.
 - **render.wfl** — builds the shared `site` context (title, nav, current user)
   and wraps Scribe's `scribe_render_file` with the theme/admin template dirs.
-- **main.wfl** — boot (open DB, migrate, seed the first admin), the request loop,
-  the `route`-based dispatcher, and all handler actions.
+- **main.wfl** — boot (open DB, migrate, backfill `installed` when users
+  already exist), the request loop, the `route`-based dispatcher with the
+  first-run lock, and all handler actions.
 
 ## Request lifecycle
 
@@ -68,12 +71,22 @@ store cookie_hdr as header "Cookie" of req
 call dispatch with db and req and req_method and req_path and req_body and cookie_hdr and req_ip
 ```
 
-`dispatch` resolves the current user from the cookie, then routes with WFL's
-`route` construct and `path_params`. Handlers are ordinary actions that call
-`respond to req …`. Since WFL 26.7.26, `header "X" of req`, `body_bytes of req`
-and friends also resolve *inside* actions from a passed request object — the
-media-upload handler uses that to read the multipart body and its
-`Content-Type` itself instead of having the loop thread them through.
+`dispatch` resolves the current user from the cookie, then **before** the
+`route` table: always serves `/assets/*`; if the `installed` setting is not
+`yes`, `/install` goes to the wizard and every other path 303s there; if it
+is installed, `/install` (GET or POST) 303s to `/` without processing a late
+POST. After that gate, routing uses WFL's `route` construct and `path_params`.
+Handlers are ordinary actions that call `respond to req …`. Since WFL 26.7.26,
+`header "X" of req`, `body_bytes of req` and friends also resolve *inside*
+actions from a passed request object — the media-upload handler uses that to
+read the multipart body and its `Content-Type` itself instead of having the
+loop thread them through.
+
+Boot backfill sits after migrate and `setting_default`s: if `installed` is not
+yet `yes` and `user_count > 0`, boot calls `install_mark_done`. That upgrades
+live sites that predate the wizard and recovers a crash after `user_create`.
+A fresh database has no users and no flag, so the dispatch lock stays open
+until `/install` succeeds.
 
 ## WFL constraints that shaped the design
 
@@ -119,8 +132,9 @@ noted inline:
   compared with `constant_time_equals` — is rejected with 403 before any
   handler runs. The multipart upload route is the one exception: its token
   travels as a form *part* and is checked inside `handle_media_upload`. The
-  login form has no session yet, so it uses a **double-submit cookie**: the
-  rendered form mints a token, sets it as a short-lived `csrf` cookie and
+  login form and the first-run installer have no session yet, so they use a
+  **double-submit cookie**: the rendered form mints a token, sets it as a
+  short-lived `csrf` cookie (`Path=/admin/login` or `Path=/install`) and
   embeds it as the hidden field; the POST must present both, matching.
   Because the gate only inspects POSTs, every mutating route — updates,
   deletes, logout — is POST-only; otherwise a plain GET (a prefetcher, a
@@ -175,7 +189,7 @@ before. Backward compatibility is preserved; the new layout is strictly opt-in.
 | `sessions` | id (random hex), user_id, created_at, expires_at, csrf_token |
 | `posts` | id, slug (unique), title, body_markdown, status (`draft`/`published`), author_id, created_at, updated_at |
 | `pages` | id, slug (unique), title, body_markdown, status, author_id, created_at, updated_at |
-| `settings` | skey (PK), svalue |
+| `settings` | skey (PK), svalue — includes `site_title`, `site_tagline`, `posts_per_page`, and `installed` (`yes` once the wizard finishes or boot backfills an existing user table) |
 | `media` | id, filename (unique, on disk under the uploads dir — `static/uploads/` by default, `<data_dir>/uploads/` when configured), original_name, content_type, size, uploader_id, created_at |
 | `login_attempts` | id, ip, attempted_at |
 

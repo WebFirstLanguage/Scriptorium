@@ -62,20 +62,17 @@ wfl main.wfl
 ```
 
 On first run Scriptorium creates `scriptorium.db`, seeds default settings, and
-prints a **one-time admin password**:
+locks the site behind a **one-page installer**. The console does not print a
+password:
 
 ```text
-==================================================
- Scriptorium — first run: seeded an admin account
-   username:  admin
-   password:  d1194faad562283922
-   (shown once — sign in and add users under Users)
-==================================================
-Scriptorium is running at http://127.0.0.1:8080  (admin: /admin)
+Scriptorium is running at http://127.0.0.1:8080
+  First run — open http://127.0.0.1:8080/install to set up your site
 ```
 
-Open <http://127.0.0.1:8080/> for the site and <http://127.0.0.1:8080/admin> to
-sign in. Add more users (admins or authors) under **Users**.
+Open <http://127.0.0.1:8080/> — you will be sent to `/install`. Choose a site
+title, tagline, admin username, and password. When setup finishes you are
+signed in at `/admin`. Add more users (admins or authors) under **Users**.
 
 > Bind address and TLS are set in `.wflcfg`. The server listens on
 > `127.0.0.1:8080` by default; set `web_server_bind_address = 0.0.0.0` to expose
@@ -118,6 +115,7 @@ All state lives in the **path** (or in POST bodies) — stable, shareable URLs.
 | GET | `/post/:slug` | A published post |
 | GET | `/page/:slug` | A published page |
 | GET | `/assets/*` | Static files (CSS, fonts, logo, uploads) |
+| GET/POST | `/install` | First-run wizard (locked after setup; late POST is ignored) |
 | GET/POST | `/admin/login` · `/admin/logout` | Auth (logout is POST-only) |
 | GET | `/admin` | Dashboard |
 | GET | `/admin/posts` · `/admin/posts/new` · `/admin/posts/:id/edit` | Posts: list, new form, edit form |
@@ -135,7 +133,7 @@ as a hidden `csrf_token` field) — requests without it get a 403.
 ## Project layout
 
 ```text
-main.wfl              Boot (open DB, migrate, seed) + request loop + router + handlers
+main.wfl              Boot (open DB, migrate, backfill) + request loop + router + handlers
 .wflcfg               WFL runtime config (bind address, TLS, body-size cap, data_dir)
 app/
   util.wfl            slugify, to_int, field_or, truncate, file_ext/stem, config_value_from (parsing is stdlib)
@@ -204,14 +202,16 @@ push from inside it, then bump the pin here.
 - Session cookies are `HttpOnly` + `SameSite=Lax`; static serving rejects `..`.
 - **CSRF**: every admin POST form carries a per-session token (hidden
   `csrf_token` field), validated with `constant_time_equals` before anything
-  mutates; the login form uses a double-submit cookie since no session exists
-  yet. Every mutating route is POST-only, so nothing can slip past the token
-  check: a GET on an update or delete route returns 405, and a GET on
-  `/admin/logout` is a no-op that redirects to `/admin` (it does *not* end the
-  session, so an `<img src="/admin/logout">` cannot log anyone out).
-- **Rate limiting**: more than 10 failed logins from one IP within 15 minutes
-  → `429` on `/admin/login` until the window passes. (A crude in-app limiter —
-  see `docs/ARCHITECTURE.md` for why a robust one wants upstream support.)
+  mutates; the login form and the first-run installer use a double-submit
+  cookie since no session exists yet. Every mutating route is POST-only, so
+  nothing can slip past the token check: a GET on an update or delete route
+  returns 405, and a GET on `/admin/logout` is a no-op that redirects to
+  `/admin` (it does *not* end the session, so an `<img src="/admin/logout">`
+  cannot log anyone out).
+- **Rate limiting**: more than 10 failed logins (or installer posts) from one
+  IP within 15 minutes → `429` until the window passes. (A crude in-app
+  limiter — see `docs/ARCHITECTURE.md` for why a robust one wants upstream
+  support.)
 - **Uploads**: images only (`png/jpg/jpeg/gif/webp`; no SVG — it can script),
   stored under a server-generated name, capped by `web_server_max_body_size`
   (10 MiB in `.wflcfg`).
