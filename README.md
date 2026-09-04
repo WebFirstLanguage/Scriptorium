@@ -78,6 +78,43 @@ signed in at `/admin`. Add more users (admins or authors) under **Users**.
 > `127.0.0.1:8080` by default; set `web_server_bind_address = 0.0.0.0` to expose
 > it behind a reverse proxy.
 
+### Choosing a theme
+
+`.wflcfg` picks the public theme. Both keys are optional and default to the
+stock base theme, so an install with neither renders exactly as before:
+
+```ini
+# .wflcfg
+theme      = logbie     # a directory under theme_root
+theme_root = themes     # may point outside the repo
+```
+
+A body template resolves as `<theme_root>/<theme>/body/<name>.html`, then
+`<theme_root>/<theme>/templates/<name>.html`, then the base theme — so a theme
+may use either folder shape, and may override only the pages it cares about.
+
+### Extending a site
+
+Scriptorium ships an inert **site-extension seam** at `app/site_ext.wfl`. A
+deployment replaces that one file with its own and keeps the rest of the tree
+stock; from there it can add routes, create its own tables, and do work at boot:
+
+- `site_ext_boot(db)` runs once after migrate and before the server listens.
+- `site_ext_dispatch(db, req, method, path, body, user)` is consulted **first**
+  in `dispatch_public`. Return `yes` once you have responded to `req`, or `no`
+  to let Scriptorium's own public routing continue. Because it runs first, an
+  extension can own `/` and still inherit `/post/:slug`, `/page/:slug` and the
+  404.
+
+It is a whole file rather than a `plugins/` directory because WFL includes form
+a tree: an extension can only see `render.wfl` — and `auth`, `db`, `util` behind
+it — if it is the **tail** of the chain, which is why `main.wfl` includes
+`app/site_ext.wfl` instead of `app/render.wfl`. A sibling include would see
+nothing. The file's header comment spells out the contract.
+[Logbie's site](https://github.com/LogbieLLC/logbie/tree/main/website) is a
+worked example: a theme, an extension, and a staging script that assembles the
+two into a runnable tree.
+
 ### Data directory (containers, backups)
 
 By default Scriptorium keeps `scriptorium.db` in the working directory and

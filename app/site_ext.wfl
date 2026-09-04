@@ -1,0 +1,33 @@
+// Scriptorium — the site-extension seam.
+//
+// A deployment that needs routes Scriptorium does not ship — a licensing API,
+// a checkout flow, a data-backed page — replaces THIS FILE with its own and
+// keeps the rest of the tree stock.
+//
+// Why a whole file instead of a plugins/ directory: WFL includes form a tree
+// and diamonds break, so an extension can only see the app's actions if it is
+// the TAIL of the linear chain util <- db <- auth <- render <- site_ext <- main.
+// A sibling include cannot see `render.wfl`'s definitions at all. That is why
+// main.wfl includes this file rather than `render.wfl` directly.
+//
+// The contract:
+//   * include "render.wfl" first, so the whole chain is in scope;
+//   * define `site_ext_dispatch`, returning `yes` when it has responded to the
+//     request and `no` to let Scriptorium's own public routing continue;
+//   * define `site_ext_boot`, called once at boot after the DB is migrated.
+// Both are called from main.wfl. This stock copy is inert.
+include from "render.wfl"
+
+// Called once at boot, after migrate/backfill and before the server listens.
+// Extensions use it to create their own tables and read their own config.
+define action called site_ext_boot with parameters db:
+    return no
+end action
+
+// Called from dispatch_public BEFORE Scriptorium's own public routes, so an
+// extension may own "/" and still inherit /post/:slug, /page/:slug and the 404.
+// Return `yes` only after responding to `req`; `no` leaves the request to
+// Scriptorium.
+define action called site_ext_dispatch with parameters db and req and req_method and req_path and req_body and user:
+    return no
+end action

@@ -31,8 +31,37 @@ define action called site_context with parameters conn and user:
     return site_map
 end action
 
+// Where public body templates are looked up. Defaults to the base theme's
+// legacy layout so an unconfigured install behaves exactly as before; boot
+// overrides it from `.wflcfg` (`theme` / `theme_root`) via the setter below.
+// A mutable module-level store is the only way to share this: main.wfl cannot
+// assign to a variable defined in an included file, but it can call an action
+// that does.
+store public_template_root as "themes/base/templates/"
+store public_template_alt as "themes/base/templates/"
+
+// Point public rendering at a theme. `root_dir` is the directory holding
+// themes (e.g. "themes", or an out-of-tree path); `theme_name` selects one.
+// Both region-aware (`<theme>/body/`) and legacy (`<theme>/templates/`) shapes
+// resolve, so a theme may use either without an engine change.
+define action called set_public_theme with parameters root_dir and theme_name:
+    change public_template_root to root_dir with "/" with theme_name with "/body/"
+    change public_template_alt to root_dir with "/" with theme_name with "/templates/"
+    return public_template_root
+end action
+
 // Render a public theme template (path relative to the repo root / CWD).
+// Resolution order: the configured theme's `body/`, then its `templates/`,
+// then the base theme — so a theme may override only the pages it cares about.
 define action called render_public with parameters template_name and ctx:
+    store primary_path as public_template_root with template_name
+    check if file exists at primary_path:
+        return scribe_render_file of primary_path and ctx
+    end check
+    store alt_path as public_template_alt with template_name
+    check if file exists at alt_path:
+        return scribe_render_file of alt_path and ctx
+    end check
     return scribe_render_file of ("themes/base/templates/" with template_name) and ctx
 end action
 

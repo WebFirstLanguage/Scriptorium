@@ -386,9 +386,16 @@ So the engine needs exactly one thing:
 That single change delivers theme selection, region-aware paths, and
 out-of-tree themes together, and retires the `news.starnet` patch.
 
-Until it lands, a new project either carries the engine as a fork with the change
-committed (so an update is a merge, not a re-applied patch), or defines its own
-render module in `src/render.wfl` per §1.
+**Done.** `render_public` now resolves `<theme_root>/<theme>/body/<name>.html`,
+falls back to `<theme_root>/<theme>/templates/<name>.html` and then to the base
+theme, with `theme` and `theme_root` read from `.wflcfg` at boot and applied via
+`set_public_theme`. Unset keys keep the legacy behaviour exactly, so no existing
+install changed. A new project no longer needs a forked engine for its theme —
+and `news.starnet` can drop its patch.
+
+Routes are the other half of the same problem, and they have their own seam:
+`app/site_ext.wfl` (see the README). Between them, a project can supply a theme
+and its own routes without forking anything.
 
 ---
 

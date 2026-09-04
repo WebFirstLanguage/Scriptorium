@@ -45,12 +45,22 @@ violate the standard.
 
 ## Known gaps worth knowing before you touch rendering
 
-- **`render_public` hardcodes `themes/base/templates/`** (`app/render.wfl:36`).
-  Every deployed site with a custom theme therefore runs a *patched clone* —
-  `news.starnet` among them — and the patch is erased by the next `git pull`.
-  Making that prefix configurable is the single change that fixes theme
-  selection, region-aware template paths, and out-of-tree themes at once. See
-  `docs/PROJECT-LAYOUT.md` §6.1.
+- **Theme selection is configurable now.** `render_public` resolves
+  `<theme_root>/<theme>/body/<name>.html`, then `.../templates/<name>.html`,
+  then the base theme, where `theme` and `theme_root` come from `.wflcfg`.
+  `main.wfl` applies them at boot via `set_public_theme`; a module-level `store`
+  is used because `main.wfl` cannot assign to a variable defined in an included
+  file, only call an action that does. This closes the gap
+  `docs/PROJECT-LAYOUT.md` §6.1 describes — a site with a custom theme no longer
+  needs a patched clone. Unset keys keep the exact legacy behaviour.
+- **`app/site_ext.wfl` is the site-extension seam**, and it is why `main.wfl`
+  includes it rather than `render.wfl`. A deployment replaces that one file to
+  add its own routes, tables and boot work; the stock copy is inert. It has to
+  be a whole file at the tail of the chain because includes form a tree —
+  a sibling include cannot see `render.wfl`'s definitions at all. It is
+  consulted **first** in `dispatch_public`, so a site can own `/` and still
+  inherit `/post/:slug`, `/page/:slug` and the 404. See the header comment in
+  the file, and `website/` in LogbieLLC/logbie for a real one.
 - **Body template names are a contract.** `home.html`, `post.html`, `page.html`,
   and `notfound.html` are named as string literals inside the handlers in
   `main.wfl`. Adding a new body template requires a new handler.
