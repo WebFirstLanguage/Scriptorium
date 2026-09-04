@@ -131,6 +131,11 @@ end action
 // config_value_from: read a `key = value` line out of `.wflcfg`-style text.
 // Full-line `#` comments and blank lines are skipped; the first matching key
 // wins and its value is trimmed. Returns `fallback` when the key is absent.
+//
+// A value runs to the END OF THE LINE: there is no inline-comment handling, so
+// `theme = logbie  # mine` yields `logbie  # mine`, not `logbie`. That is
+// deliberate (a value may legitimately contain `#`), but it means every
+// documented example must keep its comments on their own line.
 // Pure (no I/O) so it is easy to unit test; main.wfl feeds it the file text.
 define action called config_value_from with parameters cfg_text and cfg_key and fallback:
     store cfg_lines as split cfg_text by "\n"

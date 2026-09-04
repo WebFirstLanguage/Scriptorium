@@ -35,7 +35,8 @@ Library layers, each pulled in with `include from` (see the include rule below):
 ```
 render.wfl ── auth.wfl ── db.wfl ── util.wfl
      └──────── lib/scribe/src/scribe.wfl   (git submodule)
-main.wfl ── render.wfl   (+ defines the router and every request handler)
+site_ext.wfl ── render.wfl                 (the site-extension seam)
+main.wfl ── site_ext.wfl  (+ defines the router and every request handler)
 ```
 
 - **util.wfl** — `slugify`, `to_int`, `field_or`, `truncate_text`, `file_ext`,
@@ -51,6 +52,11 @@ main.wfl ── render.wfl   (+ defines the router and every request handler)
   `is_admin` / `can_edit` role checks.
 - **render.wfl** — builds the shared `site` context (title, nav, current user)
   and wraps Scribe's `scribe_render_file` with the theme/admin template dirs.
+- **site_ext.wfl** — the site-extension seam, inert as shipped. It sits
+  between `render` and `main` precisely because of constraint #2 below: only
+  the tail of the include chain can see the whole app, so a deployment's routes
+  have to live there rather than beside `main.wfl`. Boot calls `site_ext_boot`;
+  `dispatch_public` calls `site_ext_dispatch`. See the README, "Extending a site".
 - **main.wfl** — boot (open DB, migrate, backfill `installed` when users
   already exist), the request loop, the `route`-based dispatcher with the
   first-run lock, and all handler actions.
@@ -71,6 +77,10 @@ store cookie_hdr as header "Cookie" of req
 call dispatch with db and req and req_method and req_path and req_body and cookie_hdr and req_ip
 ```
 
+`dispatch_public` gives `site_ext_dispatch` first refusal on every public path,
+so a site extension can own `/` and still inherit `/post/:slug`, `/page/:slug`
+and the 404 from Scriptorium. A stock install always declines there.
+
 `dispatch` resolves the current user from the cookie, then **before** the
 `route` table: always serves `/assets/*`; if the `installed` setting is not
 `yes`, `/install` goes to the wizard and every other path 303s there; if it
@@ -81,6 +91,10 @@ Handlers are ordinary actions that call `respond to req …`. Since WFL 26.7.26,
 actions from a passed request object — the media-upload handler uses that to
 read the multipart body and its `Content-Type` itself instead of having the
 loop thread them through.
+
+Boot also calls `site_ext_boot` once, after migrate and the backfill and before
+the server listens, so an extension can create its own tables and read its own
+config before the first request arrives.
 
 Boot backfill sits after migrate and `setting_default`s: if `installed` is not
 yet `yes` and `user_count > 0`, boot calls `install_mark_done`. That upgrades

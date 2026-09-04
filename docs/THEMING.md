@@ -17,14 +17,16 @@ a sidebar), but it may never drop one of the three.
 The `themes/base/` theme is the reference implementation. It is deliberately
 small — read it alongside this doc.
 
-> **New projects use a different folder shape.** This doc describes
-> Scriptorium's current themes: `sections/` (header + footer) plus `templates/`
-> (assembler + bodies). Per [`PROJECT-LAYOUT.md`](PROJECT-LAYOUT.md), a **new**
-> project makes the three regions literal directories — `header/`, `body/`,
-> `footer/` — with `skeleton.html` and `layout.html` at the theme root. The
-> mental model below is identical; only the folders move. Note that shape needs
-> one engine change first: `render_public` currently hardcodes the
-> `themes/base/templates/` prefix (see PROJECT-LAYOUT.md §6.1).
+> **Two folder shapes are supported.** This doc describes Scriptorium's own
+> themes: `sections/` (header + footer) plus `templates/` (assembler + bodies).
+> Per [`PROJECT-LAYOUT.md`](PROJECT-LAYOUT.md), a **new** project makes the
+> three regions literal directories — `header/`, `body/`, `footer/` — with
+> `skeleton.html` and `layout.html` at the theme root. The mental model is
+> identical; only the folders move. `render_public` resolves a body template as
+> `<theme_root>/<theme>/body/<name>.html`, then
+> `<theme_root>/<theme>/templates/<name>.html`, then the base theme, so either
+> shape works today and a theme can override only the pages it cares about.
+> Pick the theme with `theme` / `theme_root` in `.wflcfg`.
 
 ---
 
@@ -226,9 +228,14 @@ body        { display: flex; flex-direction: column; min-height: 100vh; }
 
 ## 5. Authoring a new theme — checklist
 
-1. Copy `themes/base/` to `themes/<name>/`.
+1. Copy `themes/base/` to `themes/<name>/`, and set `theme = <name>` in
+   `.wflcfg` (plus `theme_root` if the theme lives outside `themes/`). Keep
+   any comment on its own line — a `.wflcfg` value runs to the end of the line,
+   so a trailing `# note` becomes part of the theme name and every lookup
+   silently falls back to the base theme. Boot warns when that happens.
 2. Keep the required file names (§1). Point the `{% extends %}` / `{% include %}`
-   paths at `themes/<name>/…`.
+   paths at `themes/<name>/…` — Scribe resolves those relative to the working
+   directory, not to the including file.
 3. Confirm the assembler puts the sections in order — **header → body → footer**
    — on **every** body template, including `notfound.html`. Exactly one
    `<header>`, one `<main class="site-body">`, one `<footer>` per page.

@@ -1,0 +1,44 @@
+// Theme-resolution tests. Run from the repo root:
+//   wfl --test TestPrograms/render.test.wfl
+//
+// set_public_theme is what turns two .wflcfg values into the path Scribe will
+// read and render, so it is the one place a bad value becomes a file read.
+// These pin the traversal guard and the default.
+include from "../app/render.wfl"
+
+describe "Theme resolution":
+
+    test "the default is the base theme's legacy layout":
+        // An install with no theme keys must behave exactly as it did before
+        // theme selection existed.
+        store fallback_root as call set_public_theme with "themes" and "base"
+        expect fallback_root to equal "themes/base/body/"
+    end test
+
+    test "a configured theme points at its own body directory":
+        store logbie_root as call set_public_theme with "themes" and "logbie"
+        expect logbie_root to equal "themes/logbie/body/"
+    end test
+
+    test "an out-of-tree theme root is honoured":
+        store outside as call set_public_theme with "/srv/sites" and "acme"
+        expect outside to equal "/srv/sites/acme/body/"
+    end test
+
+    test "a theme name containing .. is refused":
+        // Otherwise any readable file on the box becomes a public template.
+        store escaped as call set_public_theme with "themes" and "../../etc"
+        expect escaped to equal "themes/base/templates/"
+    end test
+
+    test "a theme root containing .. is refused":
+        store escaped_root as call set_public_theme with "../../.." and "base"
+        expect escaped_root to equal "themes/base/templates/"
+    end test
+
+    test "a .. buried inside a longer name is still refused":
+        store sneaky as call set_public_theme with "themes" and "logbie/../../secrets"
+        expect sneaky to equal "themes/base/templates/"
+    end test
+
+end describe
