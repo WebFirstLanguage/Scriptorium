@@ -45,6 +45,18 @@ store public_template_alt as "themes/base/templates/"
 // Both region-aware (`<theme>/body/`) and legacy (`<theme>/templates/`) shapes
 // resolve, so a theme may use either without an engine change.
 define action called set_public_theme with parameters root_dir and theme_name:
+    // Both values are operator config rather than request input, but they are
+    // spliced into a path that Scribe will read and render as a template. A
+    // ".." in either - from a typo, a copied config, or a value that picked up
+    // a trailing comment - would make any readable file on the box a public
+    // template. Refuse it and stay on the base theme, the same posture
+    // serve_asset takes for request paths.
+    check if (contains of root_dir and "..") or (contains of theme_name and ".."):
+        display "Scriptorium: refusing theme \"" with theme_name with "\" under \"" with root_dir with "\" - a theme path may not contain \"..\". Falling back to the base theme."
+        change public_template_root to "themes/base/templates/"
+        change public_template_alt to "themes/base/templates/"
+        return public_template_root
+    end check
     change public_template_root to root_dir with "/" with theme_name with "/body/"
     change public_template_alt to root_dir with "/" with theme_name with "/templates/"
     return public_template_root

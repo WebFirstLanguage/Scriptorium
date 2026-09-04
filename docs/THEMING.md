@@ -229,7 +229,10 @@ body        { display: flex; flex-direction: column; min-height: 100vh; }
 ## 5. Authoring a new theme — checklist
 
 1. Copy `themes/base/` to `themes/<name>/`, and set `theme = <name>` in
-   `.wflcfg` (plus `theme_root` if the theme lives outside `themes/`).
+   `.wflcfg` (plus `theme_root` if the theme lives outside `themes/`). Keep
+   any comment on its own line — a `.wflcfg` value runs to the end of the line,
+   so a trailing `# note` becomes part of the theme name and every lookup
+   silently falls back to the base theme. Boot warns when that happens.
 2. Keep the required file names (§1). Point the `{% extends %}` / `{% include %}`
    paths at `themes/<name>/…` — Scribe resolves those relative to the working
    directory, not to the including file.

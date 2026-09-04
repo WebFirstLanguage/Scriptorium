@@ -1334,8 +1334,34 @@ end check
 store theme_root as config_value_from of cfg_text and "theme_root" and "themes"
 store theme_name as config_value_from of cfg_text and "theme" and "base"
 store active_theme_root as set_public_theme of theme_root and theme_name
-check if theme_name is not equal to "base":
+// A refused theme (set_public_theme has already said why, and has already
+// fallen back) needs no further commentary; anything else gets checked.
+store theme_refused as no
+check if active_theme_root is equal to "themes/base/templates/":
+    check if theme_name is not equal to "base":
+        change theme_refused to yes
+    end check
+end check
+check if (theme_name is not equal to "base") and (theme_refused is equal to no):
     display "Scriptorium theme: " with theme_name with " (" with active_theme_root with ")"
+    // A theme that resolves to nothing renders every page from the base theme
+    // and says nothing about it, which is a miserable thing to debug. The most
+    // common cause is a trailing "# comment" after the value in .wflcfg:
+    // config_value_from takes the value to end of line, so the comment becomes
+    // part of the theme name.
+    store theme_body_dir as theme_root with "/" with theme_name with "/body"
+    store theme_templates_dir as theme_root with "/" with theme_name with "/templates"
+    check if directory exists at theme_body_dir:
+        store theme_dir_found as yes
+    otherwise:
+        check if directory exists at theme_templates_dir:
+            store theme_dir_found as yes
+        otherwise:
+            display "  WARNING: neither " with theme_body_dir with " nor " with theme_templates_dir with " exists."
+            display "           Every page will fall back to the base theme. Note that a value in"
+            display "           .wflcfg runs to the end of the line - it cannot carry a trailing comment."
+        end check
+    end check
 end check
 
 store db_url as "sqlite://" with db_path

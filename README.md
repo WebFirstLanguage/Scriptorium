@@ -85,13 +85,23 @@ stock base theme, so an install with neither renders exactly as before:
 
 ```ini
 # .wflcfg
-theme      = logbie     # a directory under theme_root
-theme_root = themes     # may point outside the repo
+# theme      — a directory name under theme_root
+# theme_root — where themes live; may point outside the repo
+theme = logbie
+theme_root = themes
 ```
+
+> **A value runs to the end of the line.** `.wflcfg` supports whole-line `#`
+> comments only, so `theme = logbie  # my theme` sets the theme to
+> `logbie  # my theme` and every lookup misses. Put comments on their own line.
+> This applies to `data_dir` too. Boot warns when the configured theme
+> directory does not exist, which is what a trailing comment looks like.
 
 A body template resolves as `<theme_root>/<theme>/body/<name>.html`, then
 `<theme_root>/<theme>/templates/<name>.html`, then the base theme — so a theme
 may use either folder shape, and may override only the pages it cares about.
+Neither value may contain `..`; a theme path that does is refused and the base
+theme is used, because the value ends up in a path Scribe reads and renders.
 
 ### Extending a site
 
