@@ -1,0 +1,56 @@
+# Concrete enforcement for REPOSITORY_HYGIENE.md. Changes require review of
+# the policy reason, not just a wider allowlist to make the checker pass.
+schema = 1
+
+[root]
+allowed-files = [
+  ".gitignore", ".gitmodules", ".repo-hygiene.toml", ".wflcfg",
+  "AGENTS.md", "AI_POLICY.md", "CLAUDE.md", "CODE_OF_CONDUCT.md",
+  "CONTRIBUTING.md", "GOVERNANCE.md", "LICENSE", "README.md",
+  "REPOSITORY_HYGIENE.md", "SECURITY.md", "main.wfl", "testing.md",
+]
+allowed-dirs = [
+  ".github", "admin", "app", "docs", "lib", "scripts", "static",
+  "TestPrograms", "tests", "themes",
+]
+
+[required]
+files = [
+  ".gitignore", ".gitmodules", ".repo-hygiene.toml", ".wflcfg",
+  "AGENTS.md", "AI_POLICY.md", "CLAUDE.md", "CODE_OF_CONDUCT.md",
+  "CONTRIBUTING.md", "GOVERNANCE.md", "LICENSE", "README.md",
+  "REPOSITORY_HYGIENE.md", "SECURITY.md", "main.wfl", "testing.md",
+  "docs/ARCHITECTURE.md", "docs/PROJECT-LAYOUT.md", "docs/THEMING.md",
+  "scripts/check_repo_hygiene.py", "scripts/run_tests.py",
+  "tests/tooling/test_repo_hygiene.py", "tests/tooling/test_run_tests.py",
+  ".github/pull_request_template.md", ".github/workflows/governance.yml",
+]
+# These paths must remain Git gitlinks; their contents are upstream-owned.
+gitlinks = ["lib/scribe"]
+
+[forbidden]
+# Match path components / base names case-insensitively, at any depth.
+dirs = [
+  "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+  "node_modules", ".venv", "venv", "target", ".cache",
+]
+names = [".DS_Store", "Thumbs.db", "settings.local.json", "id_rsa", "id_ed25519"]
+patterns = [
+  "*.db", "*.db-*", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*",
+  "*.log", "*.pyc", "*.pyo", "*.orig", "*.rej", "*.tmp", "*.bak",
+  "*_debug.txt", "*.ast.txt", "*.lex.txt", "*.exe", "*.dll", "*.msi",
+  ".env", ".env.*", "*.key", "*.pem", "*.p12", "*.pfx",
+  "credentials.json", "credentials.*.json", "secrets.json", "secrets.*.json",
+]
+# Mutable application state. Only the existing empty upload placeholder ships.
+paths = ["data", "static/uploads"]
+allowed-placeholders = ["static/uploads/.gitkeep"]
+
+[links]
+# Check local inline links/images and reference-link definitions in these files.
+# Fragments, external URLs, code fences, and paths within gitlinks are skipped.
+files = [
+  "README.md", "CLAUDE.md", "AGENTS.md", "GOVERNANCE.md", "CONTRIBUTING.md",
+  "CODE_OF_CONDUCT.md", "AI_POLICY.md", "SECURITY.md", "REPOSITORY_HYGIENE.md",
+  "testing.md",
+]

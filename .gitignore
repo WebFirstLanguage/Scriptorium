@@ -21,3 +21,31 @@ node_modules/
 # Uploaded media (runtime)
 static/uploads/*
 !static/uploads/.gitkeep
+
+# Local site data, backups, and test/tool outputs
+/data/
+/target/
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+*.sqlite3-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.log
+
+# Local credentials and TLS material (never commit deployment configuration)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

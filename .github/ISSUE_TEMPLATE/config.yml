@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/WebFirstLanguage/Scriptorium/blob/main/SECURITY.md
+    about: Use the private reporting process for vulnerabilities; do not publish exploit details or private site data in an issue.
