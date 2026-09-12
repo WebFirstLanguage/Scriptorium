@@ -28,6 +28,8 @@ static/uploads/*
 *.sqlite
 *.sqlite3
 *.db-journal
+*.sqlite-journal
+*.sqlite3-journal
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite3-wal

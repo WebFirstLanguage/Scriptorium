@@ -91,6 +91,13 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.git("add", "--force", "app/fixture.db")
         self.assert_result(1, "HYGIENE: artifact: app/fixture.db")
 
+    def test_repository_ignores_sqlite_databases_and_sidecars(self):
+        self.write(".gitignore", (PROJECT / ".gitignore").read_text("utf-8"))
+        for extension in ("db", "sqlite", "sqlite3"):
+            for suffix in ("", "-journal", "-wal", "-shm"):
+                self.write(f"site.{extension}{suffix}", b"local runtime fixture")
+        self.assert_result(0)
+
     def test_case_variants_and_nested_cache_are_rejected(self):
         # Windows Git may ignore __PyCache__ under the lowercase ignore rule.
         # Make these candidates visible on every platform for this check.
