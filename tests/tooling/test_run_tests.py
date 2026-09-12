@@ -76,7 +76,10 @@ class RunTestsTests(unittest.TestCase):
         runs = self.runs(result)
         self.assertEqual([Path(run["suite"]).name for run in runs],
                          ["a.test.wfl", "z.test.wfl"])
-        self.assertTrue(all(Path(run["cwd"]) == self.root for run in runs))
+        # Windows TEMP can use a DOS short path that the runner resolves to its
+        # long spelling. Assert directory identity, not how the path is spelled.
+        self.assertTrue(all(Path(run["cwd"]).samefile(self.root) for run in runs),
+                        f"Expected {self.root}, got {[run['cwd'] for run in runs]}")
 
     def test_failing_suite_preserves_diagnostics_and_later_suite_runs(self):
         self.suite("a.test.wfl", exit=7, stderr="intentional fixture failure")
