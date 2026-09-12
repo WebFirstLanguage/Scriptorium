@@ -1,9 +1,34 @@
-# Scriptorium — instructions for Claude
+# Scriptorium — shared agent instructions
 
 Scriptorium is a WordPress-style CMS written entirely in **WFL**, rendering
 through the **Scribe** template engine (a git submodule at `lib/scribe`) and
 persisting to SQLite. Start with [`README.md`](README.md), then
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Project governance
+
+Scriptorium is maintainer-led; Brad is the primary Maintainer. The binding
+policies live at the repository root:
+
+| Document | Purpose |
+|---|---|
+| [GOVERNANCE.md](GOVERNANCE.md) | Roles, decisions, compatibility, releases, and amendments |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution workflow and Contributor applications |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community conduct and reporting |
+| [AI_POLICY.md](AI_POLICY.md) | AI-assisted work is welcome; authors remain accountable |
+| [SECURITY.md](SECURITY.md) | Private vulnerability reporting and security scope |
+| [testing.md](testing.md) | Required test evidence, risk triggers, and current gaps |
+| [REPOSITORY_HYGIENE.md](REPOSITORY_HYGIENE.md) | Content placement, runtime data, and the enforced hygiene profile |
+
+Protect existing databases, uploads, URLs, theme contracts, and extension
+hooks. Behavioral changes need failing-then-passing test evidence and updated
+docs in the same change. Documentation-only changes need relevant validation,
+not artificial application tests. Do not log or commit secrets or real site
+data. Maintainers own merges, releases, access grants, and policy exceptions;
+AI assistance does not change that authority or the quality bar.
+
+`AGENTS.md` points here so agent guidance has one canonical home. Keep this
+section and the root policies aligned when changing contribution workflow.
 
 ## The one rule that catches everyone
 
@@ -34,11 +59,29 @@ violate the standard.
   identifiers instead: `the_status`, `media_row`, `db_path`.
 - **Run from the repo root.** Template and asset paths resolve relative to the
   working directory.
+- **Bug reports:** follow [CONTRIBUTING.md](CONTRIBUTING.md#report-a-bug) and
+  [.github/ISSUE_TEMPLATE/bug_report.yml](.github/ISSUE_TEMPLATE/bug_report.yml),
+  including for reports created through a CLI or API. Record observed behavior,
+  reproduction steps, expected/actual results, and known versions; mark unknown
+  details honestly. Use sanitized evidence and the private security channel
+  for suspected vulnerabilities.
+- **Pull requests:** follow the title convention and body format in
+  [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-format), using
+  [.github/pull_request_template.md](.github/pull_request_template.md) even when
+  creating a PR through a CLI or API. Keep all five sections, scale the detail
+  to the change, and update the title and body to match the final diff. Record
+  actual check results and explain inapplicable or unavailable evidence.
 - **Scribe is a submodule.** Don't edit `lib/scribe/` in place; changes go
   upstream to WebFirstLanguage/Scribe, then bump via
   `scripts/update-scribe.sh`.
-- **Tests:** `wfl --test TestPrograms/<name>.test.wfl`. There is no test workflow
-  in CI today — the only workflow is `update-scribe.yml`.
+- **Checks:** `python scripts/run_tests.py` runs every Scriptorium WFL suite;
+  add `--include-scribe` for dependency updates. Run
+  `python -m unittest discover -s tests/tooling -v` and
+  `python scripts/check_repo_hygiene.py` for repository tooling and hygiene.
+  Python 3.11+ is needed for tooling; `wfl` is needed for application tests.
+  The Governance workflow runs tooling tests and hygiene on Linux and Windows;
+  WFL runtime suites currently require recorded local results. See
+  [testing.md](testing.md) for commands, coverage limits, and merge evidence.
 - **`data_dir` is an application convention, not a WFL runtime feature.**
   `main.wfl` reads `.wflcfg` itself at boot and parses the key via
   `config_value_from` in `app/util.wfl`. The runtime ignores it.

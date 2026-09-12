@@ -6,11 +6,12 @@
 # lib/scribe to the tip of Scribe's main and opens a PR with the intervening
 # Scribe commits in the body, so the bump is reviewed rather than silent.
 #
-# Note on CI: the PR is opened with the built-in GITHUB_TOKEN, and GitHub does
-# not fire `push` / `pull_request` workflow events for anything that token
-# creates. No test workflow exists in this repo today, so nothing is missed —
-# but if one is added, it will NOT run on these auto-generated PRs. Swap in a
-# PAT or GitHub App token at that point if you want checks on them.
+# Note on CI: GITHUB_TOKEN-created PR runs may require Maintainer approval.
+# Approve the pending Governance run, or use Run workflow on the PR branch;
+# verify that the successful run covers the current revision before merging.
+# Runtime tests also need recorded results; see testing.md. No extra token is
+# needed for the manual Governance workflow.
+# https://docs.github.com/en/actions/concepts/security/github_token
 #
 # To bump by hand instead, run scripts/update-scribe.sh.
 name: Update Scribe
@@ -106,7 +107,11 @@ jobs:
           git push -u $force origin "$branch"
 
           {
-            echo "Bumps the \`lib/scribe\` submodule from \`$BEFORE\` to \`$AFTER\`."
+            echo '## Summary'
+            echo
+            echo "Update the \`lib/scribe\` pin from \`$BEFORE\` to \`$AFTER\` to pick up the latest upstream main changes while keeping checkouts reproducible."
+            echo
+            echo '## Changes'
             echo
             echo "Scribe commits picked up:"
             echo
@@ -115,7 +120,38 @@ jobs:
             echo '```'
             echo
             echo "Opened automatically by \`.github/workflows/update-scribe.yml\`."
-            echo "Review Scribe's changes and run the Scriptorium suites before merging."
+            echo
+            echo '## Compatibility and risk'
+            echo
+            echo '- **Risk class and reason:** R2 (Scribe dependency pin); raise the class if the upstream diff affects a higher-risk boundary.'
+            echo '- **Affected contracts:** Scribe pin, template rendering, escaping and safe markers, Markdown, and theme output. Review the upstream diff to identify the changed paths.'
+            echo '- **Upgrade and recovery:** Compatibility and migration requirements are not yet verified. To undo the pin change, revert the bump commit and update submodules to restore the previous pin. Any migration needs its own tested recovery plan.'
+            echo '- **Remaining risks or gaps:** Upstream compatibility review and affected rendering journeys are pending. No policy exception has been recorded.'
+            echo
+            echo '## Validation'
+            echo
+            echo '- **Tested revision and environment:** Pending. Record the tested Scriptorium and Scribe revisions, OS/configuration, `wfl --version`, and relevant tool versions with the results.'
+            echo '- **Regression evidence:** Pending upstream diff review. Record the required before/after evidence for affected behavior, or explain why a check does not apply.'
+            echo
+            echo '| Check or exact command | Result and evidence |'
+            echo '|---|---|'
+            echo '| `python scripts/run_tests.py --include-scribe` | Not run — this workflow prepares the dependency bump. Record the local and upstream suite results, including failures. |'
+            echo '| `python -m unittest discover -s tests/tooling -v` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
+            echo '| `python scripts/check_repo_hygiene.py` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
+            echo '| Affected HTTP/UI rendering journeys | Not run — upstream diff review is needed to identify affected paths. Record setup, expected/actual outcome, and evidence. |'
+            echo
+            echo 'Approve any pending Governance run, or run Governance manually on this branch. Verify that successful checks cover the current revision before merging.'
+            echo
+            echo '## Checklist'
+            echo
+            echo '- [ ] The title, summary, and risk assessment match the final diff.'
+            echo '- [ ] Required validation is recorded above; failures and missing checks are explicit.'
+            echo '- [ ] Documentation, examples, and upgrade/recovery guidance are updated where applicable.'
+            echo '- [ ] I reviewed the diff for repository hygiene, secrets, and private site data.'
+            echo
+            echo 'Follow [CONTRIBUTING.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/CONTRIBUTING.md), [testing.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/testing.md), and [REPOSITORY_HYGIENE.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/REPOSITORY_HYGIENE.md).'
+            echo
+            echo 'Report undisclosed vulnerabilities privately using [SECURITY.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/SECURITY.md).'
           } > /tmp/pr-body.md
 
           gh pr create \

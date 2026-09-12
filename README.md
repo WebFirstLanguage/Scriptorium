@@ -207,11 +207,20 @@ docs/                 Architecture notes + THEMING.md + PROJECT-LAYOUT.md + scre
 
 ## Tests
 
+From the repository root, with Python 3.11+ and WFL on PATH:
+
 ```sh
-wfl --test TestPrograms/util.test.wfl   # helpers (slugify, file_ext, parsing, …)
-wfl --test TestPrograms/db.test.wfl     # data layer against sqlite::memory:
-wfl --test TestPrograms/auth.test.wfl   # sessions + CSRF token checks
+python scripts/run_tests.py                  # all five Scriptorium suites
+python scripts/run_tests.py --include-scribe # also test the pinned Scribe engine
+python -m unittest discover -s tests/tooling -v
+python scripts/check_repo_hygiene.py
 ```
+
+Individual suites still run with `wfl --test TestPrograms/<name>.test.wfl`.
+The Governance workflow checks tooling and repository hygiene on Linux and
+Windows. Runtime test results must currently be recorded on the PR. See
+[testing.md](testing.md) for coverage, commands, and checks for changes to
+HTTP routes, security, themes, or stored data.
 
 ## Keeping Scribe current
 
@@ -229,19 +238,22 @@ tested against this Scriptorium — but it also means Scribe moving forward does
 ```sh
 scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
 scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
-wfl --test TestPrograms/scribe.test.wfl  # the suite a Scribe bump can break
-wfl --test TestPrograms/util.test.wfl    # …and the rest (see Tests), then:
+python scripts/run_tests.py --include-scribe # app and upstream regression suites
 git commit -m "chore(scribe): update lib/scribe"
 ```
 
 `.github/workflows/update-scribe.yml` does the same thing on a weekly schedule
 (and on demand via *Run workflow*), opening a PR with the Scribe commits it
-picked up. Delete that file if you would rather bump by hand only.
+picked up. Maintainers must verify Governance checks for the current revision
+and record runtime test results before merging; see [testing.md](testing.md).
+Delete that file if you would rather bump by hand only.
 
 Working on Scribe itself? `lib/scribe` is a normal git checkout — commit and
 push from inside it, then bump the pin here.
 
 ## Security notes
+
+Report suspected vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 - Passwords are stored only as Argon2id hashes; login uses `verify_password`.
 - Every SQL statement is **parameterised** — user input is never spliced into SQL.
@@ -272,6 +284,28 @@ push from inside it, then bump the pin here.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit and the
 WFL constraints that shaped the design.
+
+## Governance and contributing
+
+Scriptorium follows a maintainer-led model with Brad as primary Maintainer.
+[GOVERNANCE.md](GOVERNANCE.md) defines decision authority and binding policies;
+[CONTRIBUTING.md](CONTRIBUTING.md) explains the contribution workflow and how
+to apply for Contributor access. Anyone can propose a change through a PR.
+
+Found a bug? Follow [Report a bug](CONTRIBUTING.md#report-a-bug) and use the
+[bug-report form](.github/ISSUE_TEMPLATE/bug_report.yml) to share reproduction
+steps and environment details. Report vulnerabilities privately through
+[SECURITY.md](SECURITY.md).
+
+Participation follows the [Code of Conduct](CODE_OF_CONDUCT.md) and
+[AI Policy](AI_POLICY.md). AI-assisted contributions are welcome and held to
+the same quality bar. The [testing policy](testing.md) and
+[repository hygiene policy](REPOSITORY_HYGIENE.md) define checks and evidence.
+Agent instructions are in [CLAUDE.md](CLAUDE.md), reached through
+[AGENTS.md](AGENTS.md).
+
+The governance suite adopts WFL's approach for this CMS. Scriptorium's existing
+layout remains grandfathered under [docs/PROJECT-LAYOUT.md](docs/PROJECT-LAYOUT.md).
 
 ## License
 

@@ -1,0 +1,113 @@
+name: Bug report
+description: Report a reproducible problem with Scriptorium.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe one problem per report and link an existing issue if it covers the same problem.
+        Share what you know; use "Unknown" for versions or details you cannot determine.
+
+        **This report and its attachments will be public.** Use synthetic examples and remove
+        passwords, session cookies, CSRF tokens, personal information, private drafts, and site data.
+        Do not attach a live database, raw production logs, or your complete deployment configuration.
+
+        Report suspected security vulnerabilities privately through
+        [SECURITY.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What is broken?
+      description: Describe the problem and who or what it affects. Use a title that names the failing behavior.
+      placeholder: "For example: After saving a published page, the public page still shows the previous title."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and environment
+      description: |
+        Include what you can determine; "Unknown" is fine. From the checkout used to run the site,
+        `git rev-parse HEAD` identifies Scriptorium, `wfl --version` identifies WFL, and
+        `git submodule status lib/scribe` shows the Scribe revision and checkout status.
+        Include that output as-is. Describe relevant settings without credentials,
+        private hostnames, or private filesystem paths.
+      placeholder: |
+        Scriptorium commit or version:
+        WFL version:
+        Scribe revision and checkout status:
+        Operating system and version:
+        Browser and version (if relevant):
+        Deployment (local, container, reverse proxy, etc.):
+        Theme and site extension (stock or customized):
+        Data directory (default or configured):
+        Fresh install or upgrade:
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Give the smallest steps that show the problem, including the route, account role,
+        and synthetic input when relevant. A minimal WFL or template example is welcome.
+        If you cannot reproduce it reliably, describe the sequence you observed.
+      placeholder: |
+        1. Start with ...
+        2. Sign in as an admin/author and open ...
+        3. Submit this sample input ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen? Link relevant documentation if it helps explain the expectation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the exact error or HTTP status when available, with sensitive values removed.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Sometimes
+        - Observed once
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: Last working version or recent changes
+      description: Optional. Note a last working revision, recent upgrade, Scribe pin change, or theme/configuration change. Say if this is a fresh install.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Relevant logs, screenshots, or minimal example
+      description: |
+        Optional. Paste only the relevant sanitized excerpt or attach a screenshot/example using
+        synthetic data. Remove credentials, cookies, tokens, private content, and personal information.
+        Include commands and actual results for any checks you already ran; tests are not required to report a bug.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround or additional context
+      description: Optional. Describe any workaround, related issue, or other observation that may help reproduce the problem.
