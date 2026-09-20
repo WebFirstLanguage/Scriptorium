@@ -1,6 +1,7 @@
 // Capability gate: a CMS integration driver must inspect the response to its
 // submitted request, including login redirects and the session cookie.
-// Run with the selected runtime on PATH; loopback port 41868 must be free.
+// Baseline Red is preserved in a81ecf9; loopback port 41868 must be free.
+store runtime_path as call current_executable
 describe "WFL HTTP contracts required by CMS integration":
     test "login redirect status and session cookie remain observable":
         // Refuse an occupied port; never send test requests to another service.
@@ -11,35 +12,39 @@ describe "WFL HTTP contracts required by CMS integration":
         store readiness_root as path_join of current_directory and "target/runtime-capability-results"
         store readiness_id as generate_uuid
         store readiness_directory as path_join of readiness_root and readiness_id
-        call makedirs with readiness_directory
         store readiness_path as path_join of readiness_directory and "http-ready.txt"
-        wait for spawn command "wfl" with arguments [fixture_path, readiness_path] as child_process
         store observed_status as 0
         store observed_cookie as ""
         try:
-            count from 1 to 100:
-                check if file exists at readiness_path:
-                    break
+            call makedirs with readiness_directory
+            wait for spawn command runtime_path with arguments [fixture_path, readiness_path] as child_process
+            try:
+                count from 1 to 100:
+                    check if file exists at readiness_path:
+                        break
+                    end check
+                    check if (process child_process is running) is no:
+                        break
+                    end check
+                    wait for 100 milliseconds
+                end count
+                expect (is_file of readiness_path) to equal yes
+                expect (process child_process is running) to equal yes
+                open url at "http://127.0.0.1:41868/login" with method "POST" and body "synthetic=yes" and without following redirects and read response as probe_response
+                change observed_status to probe_response["status"]
+                store response_headers as probe_response["headers"]
+                check if response_headers contains "set-cookie":
+                    change observed_cookie to response_headers["set-cookie"]
                 end check
-                check if (process child_process is running) is no:
-                    break
-                end check
-                wait for 100 milliseconds
-            end count
-            expect (is_file of readiness_path) to equal yes
-            expect (process child_process is running) to equal yes
-            open url at "http://127.0.0.1:41868/login" with method "POST" and body "synthetic=yes" and read response as probe_response
-            change observed_status to probe_response["status"]
-            store response_headers as probe_response["headers"]
-            check if response_headers contains "set-cookie":
-                change observed_cookie to response_headers["set-cookie"]
-            end check
+            finally:
+                close process child_process
+            end try
         finally:
-            check if process child_process is running:
-                kill process child_process
+            check if is_dir of readiness_directory:
+                call remove_dir with readiness_directory and yes
             end check
-            call remove_dir with readiness_directory and yes
         end try
+        expect is_dir of readiness_directory to be no
         display "Observed redirect response: status=" with observed_status with "; cookie=" with observed_cookie
         expect observed_status to equal 302
         expect observed_cookie to contain "sid=synthetic-session"

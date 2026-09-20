@@ -216,6 +216,80 @@ combine a database from one point in time with uploads from another. Verify
 content and uploads before reopening traffic. An irreversible migration calls
 for that matching backup, not ledger deletion or an edited checksum.
 
+## Deployment and application-version compatibility
+
+Treat the application revision, immutable migration sources, WFL runtime and
+site configuration as one release. Keep those exact versions, custom themes
+and extension files with the matching database-and-uploads backup. A database
+backup alone cannot reconstruct deployment configuration or extension code.
+
+1. Stop the application, extension writers and other migration runners. Record
+   the current revision, runtime and `.wflcfg`, then make the stopped-site backup
+   described above. Keep that backup separate from the working data directory.
+2. Put the reviewed new application and migration sources in place and select
+   the required WFL runtime. From that application's root, run
+   `wfl scripts/migrate.wfl status` and `wfl scripts/migrate.wfl plan`. Check the
+   printed database target against the intended site's configuration. Inspect
+   the planned versions and any irreversible steps before proceeding.
+3. Run `wfl scripts/migrate.wfl up`, or `up --target ID` when deploying a reviewed
+   intermediate version, then run `status` again. An intermediate schema must
+   match the application being deployed; normal application startup applies
+   every pending version in that application's registry.
+4. Check integrity, foreign keys and the site's retained data. Start the app
+   with traffic held back, verify login, installation lockout, content, uploads,
+   theme and extension behavior, then reopen traffic.
+
+Startup supports fresh initialization and the legacy states listed above. It
+does not promise that older application code can use a newer schema. Code with
+this migration engine rejects history absent from its registry; older code
+without that check must not be used to bypass it. Keep the deployed code's
+registry and the database history together, including rolled-back source files
+needed to validate migration events.
+
+For an application downgrade, restore the older release and its matching backup
+unless that exact older-code/current-data combination has been reviewed and
+tested. A schema rollback alone does not authorize switching to an older
+checkout: rollback events still require the newer immutable migration files,
+and normal startup with that complete registry reapplies pending versions.
+
+For a reviewed schema rollback while the application remains stopped, use the
+**newer release's complete registry** to inspect and, only when every affected
+migration is reversible, run `wfl scripts/migrate.wfl down --target ID`. Any
+subsequent application release must explicitly support that schema, complete
+event history and startup behavior. The two shipped historical migrations are
+irreversible, so removing either requires restoration of a matching older
+backup. If rollback is irreversible or fails preflight, keep the application
+stopped and choose a reviewed forward repair or restore matching code, runtime,
+configuration, database and uploads. Never delete ledger rows or edit checksums
+to make older code start.
+
+## Interrupted-upgrade recovery
+
+1. Keep traffic closed and stop all application and migration writers. Preserve
+   the failed command's diagnostics and the current database with any sidecars;
+   do not delete sidecars or rebuild a table manually. Use the same immutable
+   release sources, runtime, configuration and intended target as the interrupted
+   attempt.
+2. Run `wfl scripts/migrate.wfl status` and `wfl scripts/migrate.wfl plan`, checking
+   the printed database target again. SQLite recovers an uncommitted transaction
+   when the database is reopened. Each version must be either fully committed
+   with its ledger entry or absent with no partial schema/data changes. A commit
+   may have finished before command output was lost; use inspected history to
+   decide what remains. Inspect integrity and foreign keys as well.
+3. If history and schema validation succeed, rerun `up` with the original
+   intended target. Applied versions are retained and only pending work runs.
+   A lock conflict requires confirming the other owner has stopped before
+   retrying. A checksum, history, schema or integrity failure requires diagnosing
+   the cause or restoring a backup; do not force adoption or rewrite history.
+4. After a successful retry, repeat deployment verification before reopening
+   traffic. If restoring instead, stop all owners, replace the entire working
+   data set with the complete backup (including matching uploads and sidecars),
+   and restore its matching code, runtime and configuration. Remove the failed
+   working data from the restore destination first so stale files cannot mix
+   with the backup. For the legacy layout, replace the database and sidecars
+   together with `static/uploads`. Recheck status, integrity, foreign keys and
+   the HTTP workflows before reopening traffic.
+
 The WFL suites exercise real file-backed databases, all supported legacy states,
 edited/missing history, drift and unsafe copy maps, rollback/reapply, whole-range
 irreversibility checks, SQLite read-only URI access, bad paths, a genuine
