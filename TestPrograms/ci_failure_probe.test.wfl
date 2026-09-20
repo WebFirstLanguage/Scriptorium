@@ -1,0 +1,6 @@
+// Temporary CI verification fixture, removed after observing the failing job.
+describe "CI failure propagation probe":
+    test "an assertion failure must fail the GitHub Actions job":
+        expect 1 to equal 2
+    end test
+end describe
