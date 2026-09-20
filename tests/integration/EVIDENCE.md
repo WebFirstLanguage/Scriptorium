@@ -108,3 +108,32 @@ requirement for the ignored Git-archive baseline and no non-WFL test logic.
 Independent source review found no fixture ownership or application-boundary
 issue. It requested ordered ledger snapshots so map iteration order cannot cause
 false failures; the test now serializes ordered lists of explicit fields.
+
+## Portable request-body rejection, 2026-09-20
+
+The original 16 MiB upload received an HTTP transport error on Linux in
+[Red run 35507634634, job 106070018120](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35507634634/job/106070018120)
+at head `07e8adcb7785c168c37fd56cc35e88492809a820`. The same media suite passed
+2/2 on Windows. WFL rejects an oversized advertised `Content-Length` before
+reading the body; closing an unread large upload can reset the connection before
+the client observes 413. This was a fixture portability assumption, not evidence
+that the upload was accepted. The test did not accept the transport error as a
+passing result.
+
+The corrected fixture asserts that the shipped configuration and normal fixture
+both retain the 10 MiB ceiling, then sets only its disposable site to 1 KiB. It
+sends a real 2 KiB multipart file and requires **413, zero media rows, zero upload
+files, and a subsequent authenticated GET returning 200**. Existing configured
+and legacy upload workflows remain covered. No retry, skip, transport-error
+fallback, application change or runtime change was introduced. This does not
+claim that eager 16 MiB HTTP/1 uploads always expose a 413 response.
+
+[Green run 35508309315, job 106071763602](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35508309315/job/106071763602)
+ran the actual media suite on Blacksmith Linux at
+`147b15c88c5fbd29e4826a32a0db5daf747ae59d`: **2/2 passed**. Its freshly resolved
+official runtime was WFL **26.9.14**, source
+`8d82d785ea59300834de1c48b04a7ba0e187a1cd`, image
+`bsbyrdwfl/wfl@sha256:8498abec67995274cb4d6cc2ee9580be11f70e15af20497bb62e51d4b2058e3c`.
+Scribe remained `93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`. The same revised
+suite passed **2/2** using the official Windows 26.9.14 runtime; retained local
+log: `target/media-probe/media-small-official-windows.log`.
