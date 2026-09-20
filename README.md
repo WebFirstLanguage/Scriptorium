@@ -74,9 +74,12 @@ Open <http://127.0.0.1:8080/> — you will be sent to `/install`. Choose a site
 title, tagline, admin username, and password. When setup finishes you are
 signed in at `/admin`. Add more users (admins or authors) under **Users**.
 
-> Bind address and TLS are set in `.wflcfg`. The server listens on
-> `127.0.0.1:8080` by default; set `web_server_bind_address = 0.0.0.0` to expose
-> it behind a reverse proxy.
+> Network settings are in `.wflcfg`. The server listens on `127.0.0.1:8080`
+> by default; set `web_server_bind_address = 0.0.0.0` to expose it behind a
+> reverse proxy. Scriptorium reads `web_server_port = 8080` at boot; change it
+> to a whole number from 1 to 65535 and restart to use a different HTTP port.
+> A missing file or setting, or an empty, malformed, fractional, or out-of-range
+> value, uses 8080. TLS settings are also in `.wflcfg`.
 
 ### Choosing a theme
 
@@ -94,8 +97,9 @@ theme_root = themes
 > **A value runs to the end of the line.** `.wflcfg` supports whole-line `#`
 > comments only, so `theme = logbie  # my theme` sets the theme to
 > `logbie  # my theme` and every lookup misses. Put comments on their own line.
-> This applies to `data_dir` too. Boot warns when the configured theme
-> directory does not exist, which is what a trailing comment looks like.
+> This applies to `data_dir` and `web_server_port` too. Boot warns when the
+> configured theme directory does not exist, which is what a trailing comment
+> looks like.
 
 A body template resolves as `<theme_root>/<theme>/body/<name>.html`, then
 `<theme_root>/<theme>/templates/<name>.html`, then the base theme — so a theme
@@ -181,7 +185,7 @@ as a hidden `csrf_token` field) — requests without it get a 403.
 
 ```text
 main.wfl              Boot (open DB, migrate, backfill) + request loop + router + handlers
-.wflcfg               WFL runtime config (bind address, TLS, body-size cap, data_dir)
+.wflcfg               Runtime and app config (bind address, HTTP port, TLS, body-size cap, data_dir)
 app/
   util.wfl            slugify, to_int, field_or, truncate, file_ext/stem, config_value_from (parsing is stdlib)
   db.wfl              SQLite schema + every query/execute helper
@@ -212,6 +216,7 @@ From the repository root, with Python 3.11+ and WFL on PATH:
 ```sh
 python scripts/run_tests.py                  # all five Scriptorium suites
 python scripts/run_tests.py --include-scribe # also test the pinned Scribe engine
+python -m unittest discover -s tests/integration -v # HTTP port configuration
 python -m unittest discover -s tests/tooling -v
 python scripts/check_repo_hygiene.py
 ```

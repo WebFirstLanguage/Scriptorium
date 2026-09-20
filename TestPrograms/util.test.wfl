@@ -74,6 +74,37 @@ describe "Scriptorium utilities":
         expect config_value_from of "" and "data_dir" and "./data" to equal "./data"
     end test
 
+    test "config_port_from defaults when absent or commented":
+        expect config_port_from of "" to equal 8080
+        expect config_port_from of "web_server_bind_address = 127.0.0.1" to equal 8080
+        expect config_port_from of "# web_server_port = 9090" to equal 8080
+    end test
+
+    test "config_port_from reads the configured port and trims whitespace":
+        expect config_port_from of "web_server_port = 9090" to equal 9090
+        expect config_port_from of "  web_server_port =  12345  \r\n" to equal 12345
+    end test
+
+    test "config_port_from accepts the valid port boundaries":
+        expect config_port_from of "web_server_port = 1" to equal 1
+        expect config_port_from of "web_server_port = 65535" to equal 65535
+    end test
+
+    test "config_port_from rejects empty and nonnumeric values":
+        expect config_port_from of "web_server_port = " to equal 8080
+        expect config_port_from of "web_server_port = nope" to equal 8080
+        expect config_port_from of "web_server_port = true" to equal 8080
+        expect config_port_from of "web_server_port = null" to equal 8080
+        expect config_port_from of "web_server_port = 9090 # inline comment" to equal 8080
+    end test
+
+    test "config_port_from rejects fractional and out-of-range ports":
+        expect config_port_from of "web_server_port = 9090.5" to equal 8080
+        expect config_port_from of "web_server_port = 0" to equal 8080
+        expect config_port_from of "web_server_port = -1" to equal 8080
+        expect config_port_from of "web_server_port = 65536" to equal 8080
+    end test
+
     test "install_validate rejects an empty title":
         expect install_validate of "" and "ada" and "secret" and "secret" to equal "Site title is required."
     end test

@@ -45,9 +45,10 @@ jobs:
             echo "- Scribe: $(git -C lib/scribe rev-parse HEAD)"
             echo '- Runner: blacksmith-2vcpu-ubuntu-2404 (Linux x64)'
             echo '- Command: python3 scripts/run_tests.py --include-scribe'
+            echo '- HTTP checks: python3 -m unittest discover -s tests/integration -v'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Run Scriptorium and pinned Scribe suites
+      - name: Run WFL suites and HTTP configuration checks
         shell: bash
         env:
           RESOLVED_IMAGE: ${{ steps.runtime.outputs.image }}
@@ -64,6 +65,7 @@ jobs:
               python3 --version
               wfl --version
               python3 scripts/run_tests.py --include-scribe
+              python3 -m unittest discover -s tests/integration -v
             '
 
       - name: Clean up test container

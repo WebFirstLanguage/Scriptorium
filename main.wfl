@@ -1315,6 +1315,8 @@ store cfg_text as ""
 check if file exists at ".wflcfg":
     change cfg_text to scribe_read_file of ".wflcfg"
 end check
+// The HTTP port is an application setting; preserve 8080 for existing installs.
+store server_port as config_port_from of cfg_text
 store data_dir as config_value_from of cfg_text and "data_dir" and ""
 check if data_dir is not equal to "":
     check if directory exists at data_dir:
@@ -1395,12 +1397,12 @@ otherwise:
     create directory at uploads_dir
 end check
 
-listen on port 8080 as web_server
-display "Scriptorium is running at http://127.0.0.1:8080"
+listen on port server_port as web_server
+display "Scriptorium is running at http://127.0.0.1:" with server_port
 check if (install_is_done of db) is equal to yes:
     display "  admin: /admin"
 otherwise:
-    display "  First run — open http://127.0.0.1:8080/install to set up your site"
+    display "  First run — open http://127.0.0.1:" with server_port with "/install to set up your site"
 end check
 
 main loop:

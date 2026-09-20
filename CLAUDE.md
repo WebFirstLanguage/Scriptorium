@@ -85,9 +85,11 @@ violate the standard.
   its summary records the resolved image digest, runtime version, and source
   revisions. See
   [testing.md](testing.md) for commands, coverage limits, and merge evidence.
-- **`data_dir` is an application convention, not a WFL runtime feature.**
-  `main.wfl` reads `.wflcfg` itself at boot and parses the key via
-  `config_value_from` in `app/util.wfl`. The runtime ignores it.
+- **`data_dir` and `web_server_port` are application configuration.**
+  `main.wfl` reads `.wflcfg` itself at boot using helpers in `app/util.wfl`;
+  the runtime does not apply these keys. The HTTP port accepts whole numbers
+  from 1 to 65535 and defaults to 8080 for a missing file or setting, or an
+  empty, malformed, fractional, or out-of-range value. Restart after changing it.
 
 ## Known gaps worth knowing before you touch rendering
 
