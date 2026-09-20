@@ -63,6 +63,25 @@ This record does not claim a clean static-analysis gate.
 - Record the freshly pulled and resolved `bsbyrdwfl/wfl:nightly` image digest,
   runtime version, Scriptorium checkout revision and unchanged Scribe revision.
 
+The implementation is available in draft
+[Scriptorium PR #16](https://github.com/WebFirstLanguage/Scriptorium/pull/16).
+Its first complete-suite attempt,
+[35504493284](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35504493284),
+successfully pulled the official image and provisioned the disposable container,
+then failed before test execution because that image lacks the new process CWD
+syntax. The log also reports `current_executable` as undefined. This is the
+expected unmet runtime prerequisite, not an accepted failing test or the
+deliberate assertion-failure proof.
+
+That attempt used PR head `26bc1c2eb9e19a604bf91c9b43171e433ff56101`, GitHub's
+tested merge checkout `4545f6246dbdaac704aa0f18c19b76e30a0073bd`, WFL `26.9.12`,
+Scribe `93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`, and image
+`bsbyrdwfl/wfl@sha256:7ddc51e6320affa7cfe26263fece590ddbdebe5582659b7e660ca823ed3ddbf1`.
+Container cleanup succeeded. Both Linux and Windows
+[Governance jobs](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35504493283)
+also provisioned the official nightly successfully and failed on the same
+missing process syntax; their later hygiene steps were skipped, not passed.
+
 The initial runtime-capability Red in
 [35499009581](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35499009581)
 used Scriptorium `a81ecf9c2c68784f3deace8b3521feae762e51ff` and image
