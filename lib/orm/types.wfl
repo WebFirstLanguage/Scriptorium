@@ -1,0 +1,191 @@
+// Shared declarations and non-mutating validation. A problem is empty text on
+// success, otherwise safe corrective guidance; it never contains a field value.
+// Public record/database operations raise these problems rather than returning
+// a success-shaped result. This module has no application dependencies.
+
+create container OrmField:
+    property field_name: Text defaults ""
+    property value_type: Text defaults "text"
+    property nullable: Boolean defaults no
+    property primary_key: Boolean defaults no
+    property generated: Boolean defaults no
+    property unique_value: Boolean defaults no
+    property sensitive: Boolean defaults no
+    property has_default: Boolean defaults no
+    // The value is polymorphic; orm_value_problem enforces the declared type.
+    property default_value defaults nothing
+    // Server defaults are limited to a named, audited expression vocabulary.
+    property server_default: Text defaults ""
+end
+
+create container OrmIndex:
+    property index_name: Text defaults ""
+    property field_names: List defaults []
+    property unique_values: Boolean defaults no
+end
+
+create container OrmRelationship:
+    property relation_name: Text defaults ""
+    property related_model defaults nothing
+    property local_field: Text defaults ""
+    property related_field: Text defaults ""
+    property many: Boolean defaults no
+end
+
+define action called orm_identifier_problem with parameters identifier:
+    store guidance as "use an ASCII letter or underscore followed by ASCII letters, digits, or underscores"
+    check if (typeof of identifier) is not equal to "Text":
+        return guidance
+    end check
+    check if (length of identifier) is equal to 0:
+        return guidance
+    end check
+    store initials as "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+    store remaining as initials with "0123456789"
+    store initial as substring of identifier and 0 and 1
+    check if (contains of initials and initial) is equal to no:
+        return guidance
+    end check
+    count from 0 to (length of identifier) minus 1:
+        store name_char as substring of identifier and count and 1
+        check if (contains of remaining and name_char) is equal to no:
+            return guidance
+        end check
+    end count
+    return ""
+end action
+
+// Compare decimal magnitudes without passing an identity through floating point.
+define action called orm_decimal_exceeds with parameters magnitude and upper_bound:
+    check if (length of magnitude) is greater than (length of upper_bound):
+        return yes
+    end check
+    check if (length of magnitude) is less than (length of upper_bound):
+        return no
+    end check
+    store digits as "0123456789"
+    count from 0 to (length of magnitude) minus 1:
+        store digit_a as substring of magnitude and count and 1
+        store digit_b as substring of upper_bound and count and 1
+        store value_a as index_of of digits and digit_a
+        store value_b as index_of of digits and digit_b
+        check if value_a is greater than value_b:
+            return yes
+        end check
+        check if value_a is less than value_b:
+            return no
+        end check
+    end count
+    return no
+end action
+
+define action called orm_identity_problem with parameters identity_text:
+    store guidance as "use canonical integer text without spaces, a plus sign, or leading zeros"
+    check if (typeof of identity_text) is not equal to "Text":
+        return guidance
+    end check
+    store magnitude as identity_text
+    store upper_bound as "9223372036854775807"
+    check if (substring of magnitude and 0 and 1) is equal to "-":
+        change magnitude to substring of magnitude and 1 and ((length of magnitude) minus 1)
+        change upper_bound to "9223372036854775808"
+        check if magnitude is equal to "0":
+            return guidance
+        end check
+    end check
+    check if (length of magnitude) is equal to 0:
+        return guidance
+    end check
+    check if (length of magnitude) is greater than 1 and (substring of magnitude and 0 and 1) is equal to "0":
+        return guidance
+    end check
+    count from 0 to (length of magnitude) minus 1:
+        store digit_char as substring of magnitude and count and 1
+        check if (contains of "0123456789" and digit_char) is equal to no:
+            return guidance
+        end check
+    end count
+    check if orm_decimal_exceeds of magnitude and upper_bound:
+        return "identity is outside SQLite's signed 64-bit range"
+    end check
+    return ""
+end action
+
+define action called orm_value_problem with parameters field_spec and field_value:
+    check if isnothing of field_value:
+        check if field_spec.nullable:
+            return ""
+        end check
+        return "null is not allowed; supply a value or omit the field to use its declared default"
+    end check
+    store actual_type as typeof of field_value
+    check if field_spec.value_type is equal to "text":
+        check if actual_type is equal to "Text":
+            return ""
+        end check
+        return "expected text"
+    end check
+    check if field_spec.value_type is equal to "identity":
+        return orm_identity_problem of field_value
+    end check
+    check if field_spec.value_type is equal to "integer":
+        check if actual_type is equal to "Number":
+            check if field_value is greater than or equal to -9007199254740991 and field_value is less than or equal to 9007199254740991:
+                check if (floor of field_value) is equal to field_value:
+                    return ""
+                end check
+            end check
+        end check
+        return "expected a whole number in the exactly representable range"
+    end check
+    check if field_spec.value_type is equal to "number":
+        check if actual_type is equal to "Number":
+            // NaN differs from itself; infinity minus itself is NaN.
+            check if (field_value minus field_value) is equal to 0:
+                return ""
+            end check
+        end check
+        return "expected a finite number"
+    end check
+    check if field_spec.value_type is equal to "boolean":
+        check if actual_type is equal to "Boolean":
+            return ""
+        end check
+        return "expected boolean"
+    end check
+    return "supported field types are text, integer, number, boolean, and identity"
+end action
+
+define action called orm_field_problem with parameters field_spec:
+    store name_problem as orm_identifier_problem of field_spec.field_name
+    check if name_problem is not equal to "":
+        return name_problem
+    end check
+    store supported_types as ["text" and "integer" and "number" and "boolean" and "identity"]
+    check if (contains of supported_types and field_spec.value_type) is equal to no:
+        return "supported field types are text, integer, number, boolean, and identity"
+    end check
+    check if field_spec.generated:
+        check if field_spec.value_type is not equal to "identity" or field_spec.primary_key is equal to no or field_spec.nullable:
+            return "generated fields must be non-null identity primary keys"
+        end check
+        check if field_spec.has_default or field_spec.server_default is not equal to "":
+            return "generated identities cannot declare a default"
+        end check
+    end check
+    check if field_spec.has_default:
+        check if field_spec.server_default is not equal to "":
+            return "choose a literal default or a server default, not both"
+        end check
+        store default_problem as orm_value_problem of field_spec and field_spec.default_value
+        check if default_problem is not equal to "":
+            return "invalid default: " with default_problem
+        end check
+    end check
+    check if field_spec.server_default is not equal to "":
+        check if field_spec.server_default is not equal to "current timestamp" or field_spec.value_type is not equal to "text":
+            return "the supported server default is current timestamp on a text field"
+        end check
+    end check
+    return ""
+end action

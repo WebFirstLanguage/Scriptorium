@@ -1,0 +1,97 @@
+include from "../lib/orm/models.wfl"
+
+create new OrmField as entry_key:
+    field_name is "id"
+    value_type is "identity"
+    primary_key is yes
+    generated is yes
+end
+create new OrmField as entry_title:
+    field_name is "title"
+    value_type is "text"
+end
+
+describe "Declarative ORM models":
+    test "fields, primary keys and indexes are discoverable":
+        create new OrmIndex as title_index:
+            index_name is "entries_title"
+            field_names is ["title"]
+        end
+        create new OrmModel as entries:
+            table_name is "entries"
+            fields is [entry_key and entry_title]
+            indexes is [title_index]
+        end
+        expect orm_model_problem of entries to equal ""
+        store found_field as orm_field_named of entries and "title"
+        expect found_field.value_type to equal "text"
+        expect orm_field_named of entries and "missing" to equal nothing
+        store key_spec as orm_primary_field of entries
+        expect key_spec.field_name to equal "id"
+    end test
+
+    test "SQLite identifier case collisions are rejected":
+        create new OrmField as other_title:
+            field_name is "TITLE"
+        end
+        create new OrmModel as conflicting:
+            table_name is "entries"
+            fields is [entry_key and entry_title and other_title]
+        end
+        expect orm_model_problem of conflicting to equal "field names must be distinct without regard to ASCII case"
+    end test
+
+    test "an index cannot quietly refer to a misspelled field":
+        create new OrmIndex as title_index:
+            index_name is "entries_title"
+            field_names is ["titel"]
+        end
+        create new OrmModel as entries:
+            table_name is "entries"
+            fields is [entry_key and entry_title]
+            indexes is [title_index]
+        end
+        expect orm_model_problem of entries to equal "an index refers to an undeclared field"
+    end test
+
+    test "collection relationships retain a typed explicit definition":
+        create new OrmModel as entries:
+            table_name is "entries"
+            fields is [entry_key and entry_title]
+        end
+        create new OrmField as comment_owner:
+            field_name is "entry_id"
+            value_type is "identity"
+        end
+        create new OrmModel as comments:
+            table_name is "comments"
+            fields is [entry_key and comment_owner]
+        end
+        create new OrmRelationship as comments_relation:
+            relation_name is "comments"
+            related_model is comments
+            local_field is "id"
+            related_field is "entry_id"
+            many is yes
+        end
+        entries.relate(comments_relation)
+        expect orm_model_problem of entries to equal ""
+        expect length of entries.relationships to equal 1
+        expect length of comments.relationships to equal 0
+    end test
+
+    test "one-record relationships require database uniqueness":
+        create new OrmModel as entries:
+            table_name is "entries"
+            fields is [entry_key and entry_title]
+        end
+        create new OrmRelationship as bad_relation:
+            relation_name is "same_title"
+            related_model is entries
+            local_field is "title"
+            related_field is "title"
+        end
+        entries.relate(bad_relation)
+        expect orm_model_problem of entries to equal "a single-record relationship must target a primary or unique field"
+    end test
+end describe

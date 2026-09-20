@@ -1,0 +1,115 @@
+include from "types.wfl"
+
+create container OrmModel:
+    property table_name: Text defaults ""
+    property fields: List defaults []
+    property indexes: List defaults []
+    property relationships: List defaults []
+
+    action relate needs relationship_spec: OrmRelationship:
+        push with relationships and relationship_spec
+    end
+end
+
+define action called orm_field_named with parameters model_spec and requested_name:
+    for each field_spec in model_spec.fields:
+        check if field_spec.field_name is equal to requested_name:
+            return field_spec
+        end check
+    end for
+    return nothing
+end action
+
+define action called orm_primary_field with parameters model_spec:
+    for each field_spec in model_spec.fields:
+        check if field_spec.primary_key:
+            return field_spec
+        end check
+    end for
+    return nothing
+end action
+
+define action called orm_model_problem with parameters model_spec:
+    store name_problem as orm_identifier_problem of model_spec.table_name
+    check if name_problem is not equal to "":
+        return "table: " with name_problem
+    end check
+    check if (length of model_spec.fields) is equal to 0:
+        return "declare at least one field and exactly one primary key"
+    end check
+    store primary_total as 0
+    store field_names as []
+    for each field_spec in model_spec.fields:
+        store field_problem as orm_field_problem of field_spec
+        check if field_problem is not equal to "":
+            return "field declaration: " with field_problem
+        end check
+        store folded_name as tolowercase of field_spec.field_name
+        check if contains of field_names and folded_name:
+            return "field names must be distinct without regard to ASCII case"
+        end check
+        push with field_names and folded_name
+        check if field_spec.primary_key:
+            change primary_total to primary_total plus 1
+        end check
+    end for
+    check if primary_total is not equal to 1:
+        return "declare exactly one primary key; composite primary keys are not supported"
+    end check
+    store index_names as []
+    for each index_spec in model_spec.indexes:
+        store index_problem as orm_identifier_problem of index_spec.index_name
+        check if index_problem is not equal to "":
+            return "index: " with index_problem
+        end check
+        store folded_index as tolowercase of index_spec.index_name
+        check if contains of index_names and folded_index:
+            return "index names must be distinct without regard to ASCII case"
+        end check
+        push with index_names and folded_index
+        check if (length of index_spec.field_names) is equal to 0:
+            return "declare at least one field in each index"
+        end check
+        store indexed_fields as []
+        for each indexed_name in index_spec.field_names:
+            check if (orm_field_named of model_spec and indexed_name) is nothing:
+                return "an index refers to an undeclared field"
+            end check
+            check if contains of indexed_fields and indexed_name:
+                return "an index cannot repeat a field"
+            end check
+            push with indexed_fields and indexed_name
+        end for
+    end for
+    store relation_names as []
+    for each relation_spec in model_spec.relationships:
+        store relation_problem as orm_identifier_problem of relation_spec.relation_name
+        check if relation_problem is not equal to "":
+            return "relationship: " with relation_problem
+        end check
+        check if contains of relation_names and relation_spec.relation_name:
+            return "relationship names must be distinct"
+        end check
+        push with relation_names and relation_spec.relation_name
+        store local_spec as orm_field_named of model_spec and relation_spec.local_field
+        check if local_spec is nothing:
+            return "a relationship refers to an undeclared local field"
+        end check
+        check if relation_spec.related_model is nothing:
+            return "a relationship must name its related model"
+        end check
+        store related_spec as orm_field_named of relation_spec.related_model and relation_spec.related_field
+        check if related_spec is nothing:
+            return "a relationship refers to an undeclared related field"
+        end check
+        check if local_spec.value_type is not equal to related_spec.value_type:
+            return "relationship fields must use the same value type"
+        end check
+        check if relation_spec.many is equal to no:
+            check if related_spec.primary_key is equal to no and related_spec.unique_value is equal to no:
+                return "a single-record relationship must target a primary or unique field"
+            end check
+        end check
+    end for
+    return ""
+end action
