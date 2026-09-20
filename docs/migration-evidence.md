@@ -50,10 +50,18 @@ the initial consistent plan or the locked recheck. It does not infer a specific
 lock position from a sleep. Two real same-target runners are separately required
 to both succeed with exactly one event per migration.
 
+A final independent Red, committed as `af2b6ac`, found that a known historical
+managed index could be reintroduced after rollback without being reported as
+drift. `TestPrograms/migration-index-safety.test.wfl` preserves that case. The
+managed index universe now includes every historical before/after declaration
+and checks expected absence as well as presence. SQLite's ASCII-insensitive
+object identity is respected, including an uppercase reintroduced name. The
+regression passes on the corrected source.
+
 ## Final focused result
 
 Each suite below was invoked as `wfl --test <path>` using the candidate above.
-All eight suites passed on final source: **23 tests, zero failures**.
+All nine suites passed on final source: **24 tests, zero failures**.
 
 | WFL suite | Passed | Observed contract |
 | --- | ---: | --- |
@@ -63,14 +71,16 @@ All eight suites passed on final source: **23 tests, zero failures**.
 | `TestPrograms/migration-legacy-matrix.test.wfl` | 3 | Both complete historical schemas, current sessions-only state, preserved seven-table data and extensions, refusal of unknown partial/altered schemas |
 | `TestPrograms/migration-rebuild.test.wfl` | 3 | Exact 64-bit high water including an empty table, cascading children, extension index/trigger, failed rebuild rollback and retry |
 | `TestPrograms/migration-schema-safety.test.wfl` | 3 | Independently reproduced inspection, copy-map and prior-only object regressions |
+| `TestPrograms/migration-index-safety.test.wfl` | 1 | Reintroduced historical managed index after rollback, including ASCII case variation |
 | `tests/tooling/migrations.test.wfl` | 4 | Real CLI exit codes, absent/configured/overridden targets, read-only legacy target planning, source edit detection, completed scaffold registration and actual up/down execution |
 | `tests/integration/migrations-recovery.test.wfl` | 3 | Five-second contention bound, killed owner rollback, same-target convergence, conflicting target refusal |
 
 Final logs are ignored `target/capability-probes/*-final.log`. The SQLite
-read-only scenario uses a sole sequential pooled connection with native
-`PRAGMA query_only=ON`; it checks a genuine SQLite read-only failure without
-depending on whether a privileged CI user bypasses OS file permissions. It is
-not claimed as a cross-platform ACL test. The lock test asserts elapsed time is
+read-only scenario opens a native `file:/absolute/path/site.db?mode=ro` URI,
+so every pooled connection has the read-only restriction.
+It checks a genuine SQLite read-only failure without depending on whether a
+privileged CI user bypasses OS file permissions. It is not claimed as a
+cross-platform ACL test. The lock test asserts elapsed time is
 at least four seconds and less than eight around the native five-second bound.
 
 The killed owner has entered a real schema scope, written a schema object,
@@ -78,6 +88,15 @@ record and uncommitted event, and signaled readiness before the parent terminate
 and reaps it. The parent verifies that all three writes disappeared, history
 remains valid, and a later migration succeeds. Separate upstream WFL tests cover
 cancelled handler futures, process exit and ordinary-return compatibility.
+
+Two fixture assumptions were corrected after failed executions. A preliminary
+`PRAGMA query_only=ON` fixture could affect only one pooled connection; a rerun
+observed three applied versions instead of the expected two. The native read-only
+URI replaces that assumption without changing the migration assertion. Also,
+bare pooled DROP/CREATE of the same synthetic index could report stale schema
+during preparation; querying SQLite proved the DROP had occurred. That paired
+fixture DDL now uses the documented native schema scope, with no arbitrary
+sleep or retry. Production migration steps already use that pinned scope.
 
 The full HTTP suite independently tests a stopped-site database-and-uploads
 backup restore and a pre-CSRF installed site's extension/theme/login behavior.

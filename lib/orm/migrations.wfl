@@ -112,7 +112,7 @@ define action called orm_schema_signatures with parameters table_specs:
     store table_names as []
     for each table_spec in table_specs:
         store table_name as table_spec.model_spec.table_name
-        check if table_name starts with "_orm_" or (contains of table_names and (tolowercase of table_name)):
+        check if (tolowercase of table_name) starts with "_orm_" or (contains of table_names and (tolowercase of table_name)):
             call orm_fail with "migration schema" and "managed table names must be unique and must not use the reserved _orm_ prefix"
         end check
         push with table_names and (tolowercase of table_name)
@@ -235,21 +235,38 @@ end action
 define action called orm_migration_schema_check with parameters session and registry and applied_total:
     store expected_tables as orm_migration_expected_schema of registry and applied_total
     store expected_names as []
+    store expected_indexes as []
     for each table_spec in expected_tables:
-        push with expected_names and table_spec.model_spec.table_name
+        push with expected_names and (tolowercase of table_spec.model_spec.table_name)
+        for each index_spec in table_spec.model_spec.indexes:
+            push with expected_indexes and (tolowercase of index_spec.index_name)
+        end for
     end for
     store checked_tables as orm_schema_require of session and expected_tables
     store inspected_names as []
+    store inspected_indexes as []
     for each migration_spec in registry:
         for each historical_tables in [migration_spec.managed_before, migration_spec.managed_after]:
             for each table_spec in historical_tables:
                 store table_name as table_spec.model_spec.table_name
-                check if (contains of expected_names and table_name) is equal to no and (contains of inspected_names and table_name) is equal to no:
+                store folded_name as tolowercase of table_name
+                check if (contains of expected_names and folded_name) is equal to no and (contains of inspected_names and folded_name) is equal to no:
                     check if orm_schema_exists of session and table_name:
                         call orm_fail with "schema drift" and ("unexpected managed table " with table_name with "; use an explicit supported legacy adoption or restore matching migration history")
                     end check
-                    push with inspected_names and table_name
+                    push with inspected_names and folded_name
                 end check
+                for each index_spec in table_spec.model_spec.indexes:
+                    store index_name as index_spec.index_name
+                    store folded_index as tolowercase of index_name
+                    check if (contains of expected_indexes and folded_index) is equal to no and (contains of inspected_indexes and folded_index) is equal to no:
+                        store index_rows as orm_sql_query of session and "SELECT name FROM sqlite_schema WHERE type='index' AND name=? COLLATE NOCASE" and [index_name]
+                        check if (length of index_rows) is greater than 0:
+                            call orm_fail with "schema drift" and ("unexpected managed index " with index_name with "; restore the index state declared by the applied migration version")
+                        end check
+                        push with inspected_indexes and folded_index
+                    end check
+                end for
             end for
         end for
     end for
@@ -266,10 +283,10 @@ define action called orm_migration_history with parameters session and registry:
     check if ledger_exists is equal to no:
         return []
     end check
-    store ledger_schema as orm_sql_query of session and "SELECT name,sql FROM sqlite_schema WHERE type='table' AND name IN ('_orm_migrations','_orm_migration_events') ORDER BY name" and []
+    store ledger_schema as orm_sql_query of session and "SELECT name,sql FROM sqlite_schema WHERE type='table' AND name COLLATE NOCASE IN ('_orm_migrations','_orm_migration_events') ORDER BY name" and []
     for each schema_row in ledger_schema:
         store expected_sql as orm_migration_ledger_sql
-        check if schema_row["name"] is equal to "_orm_migration_events":
+        check if (tolowercase of schema_row["name"]) is equal to "_orm_migration_events":
             change expected_sql to orm_migration_events_sql
         end check
         check if (orm_schema_normalize of schema_row["sql"]) is not equal to (orm_schema_normalize of expected_sql):

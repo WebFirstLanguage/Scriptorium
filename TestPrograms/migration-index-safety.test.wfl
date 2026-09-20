@@ -17,6 +17,21 @@ describe "Historical managed index drift":
                 expect error_message contains "schema drift" to be yes
             end try
             expect refused to be yes
+            // SQLite object names are ASCII-case insensitive. A different
+            // spelling must not evade the historical managed-name check.
+            store conn as session.connection
+            in transaction on conn for schema changes:
+                store dropped_index as orm_sql_execute of session and "DROP INDEX idx_items_title" and []
+                store upper_index as orm_sql_execute of session and "CREATE INDEX IDX_ITEMS_TITLE ON items(title)" and []
+            end transaction
+            store upper_refused as no
+            try:
+                store upper_status as orm_migration_status of session and registry
+            when error:
+                change upper_refused to yes
+                expect error_message contains "schema drift" to be yes
+            end try
+            expect upper_refused to be yes
         finally:
             call migration_fixture_remove with session and database_path
         end try

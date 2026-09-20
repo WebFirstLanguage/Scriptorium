@@ -1,18 +1,17 @@
 include from "../tests/fixtures/migration-registry.wfl"
 
 describe "Migration failure boundaries":
-    test "SQLite query-only access fails with its read-only cause and leaves history unchanged":
+    test "a read-only SQLite URI fails with its cause and leaves history unchanged":
         store database_path as migration_fixture_path
         store owner_session as orm_open of database_path
         try:
             store registry as migration_fixture_registry of "fixture index source\n"
             store initialized as orm_migrate of owner_session and registry and "20260920000002"
-            // Sole sequential handle: exactly one pooled connection exists.
-            // SQLite itself enforces query_only on that connection. This is
-            // portable even when CI's OS account can bypass file permissions.
-            store readonly_session as orm_open of database_path
+            // SQLite's native file URI enforces read-only access on every
+            // pooled connection, even for a privileged CI operating-system user.
+            store uri_path as replace "\\" with "/" in database_path
+            store readonly_session as orm_open of ("file:" with uri_path with "?mode=ro")
             try:
-                store query_only as orm_sql_execute of readonly_session and "PRAGMA query_only=ON" and []
                 store refused as no
                 try:
                     store blocked_plan as orm_migrate of readonly_session and registry and "latest"

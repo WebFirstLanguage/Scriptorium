@@ -139,8 +139,9 @@ store rebuild_step as orm_migration_rebuild of old_table and new_table and ["id"
 store data_step as orm_migration_sql of "UPDATE settings SET svalue=? WHERE skey=?" and ["new value", "setting name"]
 ```
 
-`orm_migration_drop_table` requires an irreversible reason for an up migration.
-Column removal also requires a reason. Rebuilds can alter column types,
+`orm_migration_drop_table` requires an irreversible reason in either direction.
+Discarding column values in either direction also requires a reason; an explicit
+lossless rename copy preserves the values. Rebuilds can alter column types,
 nullability/defaults and other supported declarations; a transformation outside
 the typed vocabulary must be explicit authored SQL with runtime values bound as
 parameters. Review SQL steps for loss of data and honest reversibility. Do not
@@ -217,10 +218,10 @@ for that matching backup, not ledger deletion or an edited checksum.
 
 The WFL suites exercise real file-backed databases, all supported legacy states,
 edited/missing history, drift and unsafe copy maps, rollback/reapply, whole-range
-irreversibility checks, read-only SQLite query enforcement, bad paths, a genuine
+irreversibility checks, SQLite read-only URI access, bad paths, a genuine
 five-second lock, concurrent processes and killed transaction-owner recovery.
 CLI tests invoke real child processes, including generated-source execution.
 HTTP recovery tests stop and restore a complete disposable site with matching
 uploads. Runtime cancellation and process-exit cleanup have additional upstream
-WFL coverage. Query-only coverage is portable even for privileged CI accounts;
+WFL coverage. Read-only URI coverage is portable even for privileged CI accounts;
 it does not claim OS ACL or permission testing on every host.

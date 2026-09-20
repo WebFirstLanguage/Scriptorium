@@ -186,13 +186,13 @@ define action called orm_schema_normalize with parameters sql_text:
 end action
 
 define action called orm_schema_exists with parameters session and table_name:
-    store rows_found as orm_sql_query of session and "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name=?" and [table_name]
+    store rows_found as orm_sql_query of session and "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name=? COLLATE NOCASE" and [table_name]
     return (length of rows_found) is greater than 0
 end action
 
 define action called orm_schema_problem with parameters session and table_spec:
     store table_name as table_spec.model_spec.table_name
-    store rows_found as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='table' AND name=?" and [table_name]
+    store rows_found as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='table' AND name=? COLLATE NOCASE" and [table_name]
     check if (length of rows_found) is not equal to 1:
         return "missing managed table " with table_name
     end check
@@ -202,7 +202,7 @@ define action called orm_schema_problem with parameters session and table_spec:
         return "managed table " with table_name with " differs from its immutable migration declaration; restore the expected schema or author a reviewed migration"
     end check
     for each index_spec in table_spec.model_spec.indexes:
-        store index_rows as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='index' AND name=? AND tbl_name=?" and [index_spec.index_name, table_name]
+        store index_rows as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='index' AND name=? COLLATE NOCASE AND tbl_name=? COLLATE NOCASE" and [index_spec.index_name, table_name]
         check if (length of index_rows) is not equal to 1:
             return "missing managed index " with index_spec.index_name
         end check
@@ -277,7 +277,7 @@ define action called orm_schema_rebuild with parameters session and before_table
     check if prior_problem is not equal to "":
         call orm_fail with "schema rebuild" and prior_problem
     end check
-    store extension_objects as orm_sql_query of session and "SELECT type,name,sql FROM sqlite_schema WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name" and [table_name]
+    store extension_objects as orm_sql_query of session and "SELECT type,name,sql FROM sqlite_schema WHERE tbl_name=? COLLATE NOCASE AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name" and [table_name]
     // SQLite permits creating a trigger that later references an absent column.
     // Without a SQL dependency parser, refuse that ambiguous case before DROP.
     for each prior_field in before_table.model_spec.fields:
@@ -295,7 +295,7 @@ define action called orm_schema_rebuild with parameters session and before_table
     end check
     store old_sequence as nothing
     check if orm_schema_exists of session and "sqlite_sequence":
-        store sequence_rows as orm_sql_query of session and "SELECT CAST(seq AS TEXT) AS seq FROM sqlite_sequence WHERE name=?" and [table_name]
+        store sequence_rows as orm_sql_query of session and "SELECT CAST(seq AS TEXT) AS seq FROM sqlite_sequence WHERE name=? COLLATE NOCASE" and [table_name]
         check if (length of sequence_rows) is greater than 0:
             store sequence_row as sequence_rows[0]
             change old_sequence to sequence_row["seq"]
@@ -311,7 +311,7 @@ define action called orm_schema_rebuild with parameters session and before_table
     for each extension_object in extension_objects:
         store managed_index as no
         for each index_spec in before_table.model_spec.indexes:
-            check if extension_object["name"] is equal to index_spec.index_name:
+            check if (tolowercase of extension_object["name"]) is equal to (tolowercase of index_spec.index_name):
                 change managed_index to yes
             end check
         end for
