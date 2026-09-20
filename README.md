@@ -217,8 +217,13 @@ python scripts/check_repo_hygiene.py
 ```
 
 Individual suites still run with `wfl --test TestPrograms/<name>.test.wfl`.
-The Governance workflow checks tooling and repository hygiene on Linux and
-Windows. Runtime test results must currently be recorded on the PR. See
+The [WFL tests workflow](.github/workflows/wfl-tests.yml) runs all five
+Scriptorium suites and the pinned Scribe suite on Blacksmith Linux using the
+latest `bsbyrdwfl/wfl:nightly` Docker image. It pulls the nightly tag on each run
+and records the resolved image digest, runtime version, and tested source
+revisions in the job summary. The Governance workflow checks tooling and
+repository hygiene on Blacksmith Linux and GitHub-hosted Windows. Link results
+for the current revision on the PR. See
 [testing.md](testing.md) for coverage, commands, and checks for changes to
 HTTP routes, security, themes, or stored data.
 
@@ -244,8 +249,9 @@ git commit -m "chore(scribe): update lib/scribe"
 
 `.github/workflows/update-scribe.yml` does the same thing on a weekly schedule
 (and on demand via *Run workflow*), opening a PR with the Scribe commits it
-picked up. Maintainers must verify Governance checks for the current revision
-and record runtime test results before merging; see [testing.md](testing.md).
+picked up. Maintainers must verify Governance and WFL tests results for the
+current revision before merging; bot-created PRs may need both workflows
+dispatched manually on their branch. See [testing.md](testing.md).
 Delete that file if you would rather bump by hand only.
 
 Working on Scribe itself? `lib/scribe` is a normal git checkout — commit and

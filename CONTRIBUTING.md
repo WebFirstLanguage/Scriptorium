@@ -121,14 +121,21 @@ write fixtures. Follow [testing.md](testing.md) for HTTP, UI, security, migratio
 and recovery checks triggered by the change. Prose-only changes need relevant
 link, command, and hygiene checks; they do not need invented application tests.
 
+The WFL tests workflow runs both application and pinned Scribe suites on
+Blacksmith Linux using a freshly pulled `bsbyrdwfl/wfl:nightly` Docker image.
+Its summary records the resolved image digest, WFL version, and tested source
+revisions. Link the current revision's run as CI runtime evidence; retain any
+local regression or boundary evidence needed for the change. Governance checks
+repository tooling and hygiene on Blacksmith Linux and GitHub-hosted Windows.
+
 Keep PRs focused and use conventional commit subjects such as `fix:`, `feat:`,
 `docs:`, `test:`, `refactor:`, and `chore:`. Follow the PR format below.
 
 Do not include passwords, session cookies, tokens, user databases, or personal
 content in logs or fixtures. A review must resolve blocking findings before
 merge. A bot-created dependency PR needs the same evidence as a human-authored
-PR; approve any pending workflow run or run the Governance workflow manually on
-the proposed branch, then verify the tested revision and runtime results.
+PR; approve any pending workflow runs or run both Governance and WFL tests
+manually on the proposed branch, then verify the tested revision and results.
 
 GitHub review and branch-protection settings are maintained on the repository
 host. Adding these documents or workflows does not configure those settings.
