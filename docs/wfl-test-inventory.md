@@ -210,7 +210,8 @@ Windows, records the published release URL/asset/SHA256/version, runs
 Python remains only for that non-test checker implementation.
 
 The WFL tests workflow pulls `bsbyrdwfl/wfl:nightly`, resolves its digest,
-records runtime/Scriptorium/Scribe versions, and runs `wfl scripts/run_tests.wfl`
+records runtime/Scriptorium/Scribe versions, and runs
+`wfl --execution-timeout 1200 scripts/run_tests.wfl`
 in that resolved container. A read-only source mount is copied into a disposable
 writable checkout. Suite, Scribe-copy and HTTP orchestration are WFL. The Update
 Scribe generated PR checklist uses these same commands. Final remote runtime

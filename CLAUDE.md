@@ -74,7 +74,7 @@ violate the standard.
 - **Scribe is a submodule.** Don't edit `lib/scribe/` in place; changes go
   upstream to WebFirstLanguage/Scribe, then bump via
   `scripts/update-scribe.sh`.
-- **Checks:** `wfl scripts/run_tests.wfl` runs the complete suite: application,
+- **Checks:** `wfl --execution-timeout 1200 scripts/run_tests.wfl` runs the complete suite: application,
   ORM/migrations/recovery, HTTP integration, tooling, executable examples, and
   pinned Scribe. `--group tooling` or `--group application` selects a focused
   run. Run `python scripts/check_repo_hygiene.py` for the repository hygiene gate.

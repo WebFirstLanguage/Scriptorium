@@ -17,8 +17,9 @@ repeat while argument_index is less than (length of args):
     store option_name as args[argument_index]
     change argument_index to argument_index plus 1
     check if option_name is equal to "--help":
-        display "Usage: wfl scripts/run_tests.wfl [--wfl PROGRAM] [--timeout SECONDS] [--group all|application|tooling|integration|runtime|examples|scribe] [--include-scribe]"
+        display "Usage: wfl [--execution-timeout SECONDS] scripts/run_tests.wfl [--wfl PROGRAM] [--timeout SECONDS] [--group all|application|tooling|integration|runtime|examples|scribe] [--include-scribe]"
         display "Default: all suites, executable examples, and pinned Scribe; 120 seconds per suite."
+        display "For the complete suite, use --execution-timeout 1200 before the script path."
         exit program
     otherwise:
         check if option_name is equal to "--include-scribe":

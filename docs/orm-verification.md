@@ -106,8 +106,46 @@ the log is `target/full-official-windows-red.log`. Independent timing comparison
 found migration CLI tests took 35.1 seconds on native Linux, 36.1 in Docker and
 12.6 on Windows. No connection leak or fixed delay was found. The longer full
 Linux run needs an explicit finite invocation budget while retaining child
-deadlines. The media fixture's portable rejection boundary is being corrected
-without accepting transport errors as HTTP responses.
+deadlines. The media fixture now uses a portable rejection boundary while still
+requiring HTTP 413, no stored rows or files, and a subsequent successful request;
+see `tests/integration/EVIDENCE.md`.
+
+The next complete run,
+[35508311002](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35508311002),
+tested head `147b15c88c5fbd29e4826a32a0db5daf747ae59d` through merge checkout
+`1c190c5a1798ca86244b9bb0142251f35c78b3b6` on the same official runtime.
+Media passed **2/2** both within this complete run and in its new focused Linux
+gate. The complete runner still reported **32 passed, 10 failed**, exit 1:
+the intentional assertion and nine failures after the 300-second parent deadline.
+Both Governance platforms and all six focused capability jobs passed. This is
+evidence that the media correction works, not isolated deliberate-failure proof.
+
+A fourth upstream change,
+[WFL #741](https://github.com/WebFirstLanguage/wfl/pull/741) at
+`68c466504610cf5bfff26e8755f3b6064ceab2a2`, is being validated: an explicit finite
+`--execution-timeout` option for the shared invocation budget. The prepared
+complete-suite command is `wfl --execution-timeout 1200 scripts/run_tests.wfl`.
+It preserves existing per-suite timeouts and child process limits. Publication
+of a runtime supporting this option and the final remote Red/Green are pending.
+Independent technical review found no remaining source or fixture blocker;
+15 fast WFL cases, a real 305-second WFL boundary assertion, 139 existing Rust
+compatibility tests, formatting, strict Clippy and 36 documentation checks passed
+locally. Exact-head upstream CI is
+[35509162373](https://github.com/WebFirstLanguage/wfl/actions/runs/35509162373).
+
+The prepared command completed locally with the reviewed CLI candidate:
+**42 suites, 41 passed, one intentional failure**, exit 1. Only
+`TestPrograms/ci-propagation.test.wfl` failed; every functional suite completed.
+The candidate reports WFL 26.9.15, with executable SHA256
+`1185f150c8214d982a27431d4b88b94f7f20d6ce6c718161c35120deb817650f`.
+It was built from upstream Red `84cb272c` plus the reviewed, frozen CLI source
+change before its Green commit. Scriptorium was at
+`2d1d6e2a5ca1ea98396f1d587218b7279144077f` plus the prepared command/help and
+documentation changes; test scenarios were unchanged. The log
+`target/full-cli-budget-candidate-red.log` spans 11:45:41–11:54:10 UTC on
+2026-09-20, approximately 509 seconds by file metadata. Repository hygiene passed
+with 180 paths including the intentional suite. This proves local consumer
+behavior beyond 300 seconds, not a final official-image CI pass.
 
 - Push an actual intentionally failing WFL test, observe the new runner and
   its Blacksmith CI job fail, then remove it and verify a clean run.

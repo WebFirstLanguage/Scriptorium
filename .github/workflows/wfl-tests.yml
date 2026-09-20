@@ -47,7 +47,7 @@ jobs:
             echo "- Scriptorium: $(git rev-parse HEAD)"
             echo "- Scribe: $(git -C lib/scribe rev-parse HEAD)"
             echo '- Runner: blacksmith-2vcpu-ubuntu-2404 (Linux x64)'
-            echo '- Command: wfl scripts/run_tests.wfl'
+            echo '- Command: wfl --execution-timeout 1200 scripts/run_tests.wfl'
             echo '- Coverage: application, ORM/migrations/recovery, HTTP integration, tooling, examples, pinned Scribe'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -69,7 +69,7 @@ jobs:
               cp -a /source/. /work/
               python3 --version
               wfl --version
-              wfl scripts/run_tests.wfl
+              wfl --execution-timeout 1200 scripts/run_tests.wfl
             '
 
       - name: Clean up test container

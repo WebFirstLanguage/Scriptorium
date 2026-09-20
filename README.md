@@ -54,6 +54,8 @@ is nightly **26.9.14** from source `8d82d785` (or a newer runtime retaining its
 application-error, schema-transaction, HTTP and owned-process capabilities).
 Official 26.9.12 lacks those prerequisites. See the
 [runtime verification record](docs/orm-verification.md) for immutable provenance.
+The complete Linux test command additionally needs the `--execution-timeout`
+option; its upstream validation and official publication are pending.
 Scriptorium keeps the
 [Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
 submodule, so clone with submodules:
@@ -226,7 +228,7 @@ From the repository root, with WFL, Git and Python 3.11+ on PATH (Python is
 only needed for the repository hygiene checker):
 
 ```sh
-wfl scripts/run_tests.wfl                     # complete suite, including Scribe
+wfl --execution-timeout 1200 scripts/run_tests.wfl # complete suite, including Scribe
 wfl scripts/run_tests.wfl --group integration # focused HTTP workflows
 wfl scripts/run_tests.wfl --group tooling     # runner and hygiene regressions
 python scripts/check_repo_hygiene.py
@@ -259,7 +261,7 @@ tested against this Scriptorium — but it also means Scribe moving forward does
 ```sh
 scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
 scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
-wfl scripts/run_tests.wfl          # complete suite, including upstream Scribe
+wfl --execution-timeout 1200 scripts/run_tests.wfl # complete suite, including upstream Scribe
 git commit -m "chore(scribe): update lib/scribe"
 ```
 

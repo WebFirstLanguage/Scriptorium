@@ -55,7 +55,7 @@ the baseline suites:
 
 ```sh
 wfl --version
-wfl scripts/run_tests.wfl
+wfl --execution-timeout 1200 scripts/run_tests.wfl
 ```
 
 Use `--wfl /absolute/path/to/wfl` if the interpreter is not on `PATH`; use
@@ -106,7 +106,7 @@ the PR:
 
 ```sh
 python scripts/check_repo_hygiene.py
-wfl scripts/run_tests.wfl
+wfl --execution-timeout 1200 scripts/run_tests.wfl
 ```
 
 The complete command includes pinned Scribe. For a focused Scribe check, run:

@@ -1,5 +1,5 @@
-# WFL currently caps the whole CLI invocation at 300 seconds.
-# Each child suite also has the runner's separate bounded wait.
+# Default configured budget; the complete command explicitly supplies
+# --execution-timeout 1200 before the script path. Child waits remain bounded.
 timeout_seconds = 300
 execution_logging = false
 debug_report_enabled = false

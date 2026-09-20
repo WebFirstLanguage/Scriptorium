@@ -56,12 +56,15 @@ Python's specific KeyboardInterrupt message/status is not a portable promise.
 Timeouts use finite positive JSON-number notation up to one year.
 
 The subprocess wait limit is separate from WFL's whole-invocation execution
-budget. The current CLI clamps `timeout_seconds` to at most 300 seconds;
-zero becomes one second, and no CLI timeout override disables the clamp.
-Accordingly `scripts/.wflcfg` now states 300 instead of the ineffective 3600.
-This correction changes no effective behavior. Each child can also have a
-shorter runtime deadline from its own configuration; `--timeout` does not
-extend either runtime deadline.
+budget. Official WFL 26.9.14 clamps `timeout_seconds` to at most 300 seconds;
+zero becomes one second, and that version provides no CLI timeout override.
+Accordingly `scripts/.wflcfg` states 300 instead of the ineffective 3600.
+That correction changes no effective behavior. The next upstream remedy adds
+an explicit finite invocation option, used by the complete command as
+`wfl --execution-timeout 1200 scripts/run_tests.wfl`; its official publication
+and final remote acceptance are tracked in `orm-verification.md`. Each child
+still has its own runtime deadline and bounded subprocess wait. The runner's
+`--timeout` option does not extend either runtime deadline.
 
 The frozen complete suite at Scriptorium
 `3bc7b4faaf9c000047d940f0e420067b777db5c9` passed **41/41 suites** on combined WFL
@@ -75,6 +78,20 @@ governance platforms and the complete-suite Docker command. Exact-revision
 remote Green remains required; this source review does not claim it.
 
 ## Final acceptance still required
+
+The independent 2026-09-20 source audit rechecked all eight original runner,
+28 hygiene and three HTTP-port requirements against the replacement WFL files.
+It found no missing conversion case or non-WFL scenario, fixture, assertion or
+driver. The five original WFL application suites are unchanged from baseline
+`4ec5c88d9e4ae27041599ad8293a28130b56fbf2`; Scribe's gitlink and checkout remain
+`93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`. Current discovery is 24 application,
+three tooling, eight integration, five runtime, one example and one Scribe suite:
+42 total while the deliberate CI failure is present, 41 after its removal.
+The audit also reviewed owned-process cleanup, descendant timeout markers,
+failure diagnostics and continuation, disposable Scribe copies, real HTTP and
+backup/restore boundaries, migration concurrency/interruption, and the executable
+API progression. Two stale command descriptions were corrected. This source
+review does not replace the final execution and publication gates below.
 
 The full application/ORM/migration/recovery/HTTP/example suite and final-revision
 remote jobs are recorded with the overall PR. Governance retains Blacksmith

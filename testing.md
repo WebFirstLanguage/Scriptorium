@@ -69,10 +69,12 @@ and Git are needed to exercise the existing hygiene checker; every test
 scenario, fixture, assertion, helper and driver is WFL. Run individual suites from the
 Scriptorium root so relative includes, templates, and assets resolve correctly.
 
-The ORM and complete runner additionally require application errors, pinned
-schema transactions, HTTP redirect/header controls and owned process completion.
-Official nightly 26.9.14 at `8d82d785` contains the verified prerequisites;
-official 26.9.12 does not. Record source revision as well as the version:
+The ORM and test suites additionally require application errors, pinned schema
+transactions, HTTP redirect/header controls and owned process completion.
+Official nightly 26.9.14 at `8d82d785` contains those capabilities; official
+26.9.12 does not. The complete Linux runner also requires the explicit
+`--execution-timeout` invocation option, whose official publication is pending.
+Record source revision as well as the version:
 [the verification record](docs/orm-verification.md) identifies the published
 artifacts and final CI evidence.
 
@@ -98,7 +100,7 @@ files under `TestPrograms/`, `tests/tooling/`, `tests/integration/`,
 `tests/runtime/`, and `examples/`, sorts each group, then runs the pinned Scribe suite:
 
 ```sh
-wfl scripts/run_tests.wfl
+wfl --execution-timeout 1200 scripts/run_tests.wfl
 wfl scripts/run_tests.wfl --group application
 wfl scripts/run_tests.wfl --group tooling
 wfl scripts/run_tests.wfl --group integration
@@ -112,12 +114,15 @@ the runner. `--wfl /absolute/path/to/wfl` selects another executable; a bare
 program name uses native PATH lookup. The resolved absolute identity is passed
 to every suite as `args[0]`. `--timeout 120` sets the
 maximum subprocess wait per suite; 120 is the default. A suite's own WFL runtime
-configuration can impose a shorter limit. The current WFL CLI also caps the
-entire runner invocation at 300 seconds, including discovery and all suites;
-`scripts/.wflcfg` uses that effective maximum. `--timeout` does not extend the
-whole-run limit, and setting WFL's `timeout_seconds` to zero does not disable it.
-The CI job's longer timeout also includes provisioning and cleanup; it does not
-extend WFL's execution budget. The runner executes suites
+configuration can impose a shorter limit. The WFL invocation option
+`--execution-timeout 1200` supplies a finite 20-minute budget for the complete
+runner, including discovery and every suite. Place it before the script path.
+It changes neither the 120-second suite wait nor the children's own runtime
+limits. Without this explicit option, `scripts/.wflcfg` supplies the runtime's
+300-second configuration maximum, which is insufficient for the complete
+Linux run. Setting `timeout_seconds` to zero does not disable that bound.
+The CI job's longer timeout also includes provisioning and cleanup.
+The runner executes suites
 sequentially from the proper working directory, preserves stdout and stderr
 contents in its output (stderr has a label),
 reports suite results while the whole-run budget remains, and exits nonzero if
@@ -249,7 +254,7 @@ keyboard behavior, or data integrity.
 [Governance](.github/workflows/governance.yml) runs repository hygiene and tooling
 checks on Blacksmith Linux and GitHub-hosted Windows.
 [WFL tests](.github/workflows/wfl-tests.yml) runs the complete WFL suite via
-`wfl scripts/run_tests.wfl` on
+`wfl --execution-timeout 1200 scripts/run_tests.wfl` on
 `blacksmith-2vcpu-ubuntu-2404`. Both workflows run for pushes and pull requests to
 `main` and support manual dispatch.
 
