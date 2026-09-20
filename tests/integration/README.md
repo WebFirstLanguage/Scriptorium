@@ -10,6 +10,7 @@ wfl --test tests/integration/content-users.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/media.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/throttle.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/recovery.test.wfl /absolute/path/to/wfl
+wfl --test tests/integration/legacy-upgrade.test.wfl /absolute/path/to/wfl
 ```
 
 The runtime must support native per-child working directories, owned process
@@ -48,14 +49,20 @@ all response-header values. Tests manage synthetic cookies explicitly.
 | `media.test.wfl` | Configured and legacy storage, generated safe names, byte retrieval, missing/wrong CSRF, extension/empty/malformed/oversized rejection, author denial, method enforcement, database/file consistency on deletion. |
 | `throttle.test.wfl` | Exactly ten failed credentials, next request blocked, persistence across restart, expired-window recovery and successful-login clearing. |
 | `recovery.test.wfl` | Stopped-site database-plus-upload backup, restart, actual restore after a later change, HTTP content/media and login, SQLite integrity and foreign-key checks. |
+| `legacy-upgrade.test.wfl` | Pre-CSRF installed-site adoption and restart; existing admin/session and published content, installer lock, custom extension boot/route and configured theme, unchanged migration history and extension data. |
 
 SQL reads inspect the synthetic site independently; installation, account and
-content creation use the real HTTP routes. SQL writes only simulate expired
+content creation use the real HTTP routes. Outside the historical-upgrade
+fixture, SQL writes only simulate expired
 sessions and elapsed throttle windows. Upload payloads are synthetic text with
 image extensions because the current CMS validates extensions, not image
 decoding. These checks do not claim browser accessibility or image-content
 inspection. Migration upgrade/crash-recovery coverage belongs to the migration
-suites; this HTTP recovery test restores a matching stopped-site data backup.
+suites; the HTTP recovery test restores a matching stopped-site data backup.
+The legacy-upgrade fixture creates the frozen historical schema and synthetic
+persisted rows directly in WFL, then verifies adoption through actual application
+boot and HTTP routes. It requires the updated application and does not run
+against the optional original-source baseline.
 
 The three original Python port cases have passed through their WFL replacements,
 and the Python file has been removed. Its original source remains in Git at

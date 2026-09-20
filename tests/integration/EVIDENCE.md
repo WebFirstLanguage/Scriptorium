@@ -84,3 +84,27 @@ backup/restore protocol. It found no blocking source issue: unique owned
 directories, cleanup after failures, reaping before copying all data/sidecars,
 and HTTP plus SQLite checks after restore. This is technical review, not
 Maintainer approval or release acceptance.
+
+## Legacy extension and theme upgrade boundary
+
+`legacy-upgrade.test.wfl` passed **1/1** on 2026-09-20 with the same combined
+runtime against the working candidate after the compatibility fixes. Log:
+`target/http-candidate-legacy-upgrade.log`. This adds a twelfth HTTP case.
+
+WFL creates the original seven-table schema without `sessions.csrf_token` or a
+migration ledger, a synthetic Argon2 administrator, an installed flag, published
+content, a live legacy session and an extension-owned payload. It copies a WFL
+extension into the disposable site's documented seam and generates a configured
+custom theme. Actual boot adopts the schema and creates extension boot markers.
+HTTP proves both installer methods remain locked, the extension owns `/` before
+stock dispatch, the custom theme renders extension and stock post routes, the
+retained user can log in, and a legacy empty CSRF token cannot mutate settings.
+
+A stopped/reaped restart preserves identical ledger rows/checksums/timestamps,
+retained extension payload and managed rows; only the extension's expected boot
+count increments. Integrity and foreign-key checks pass. The fixture has no
+requirement for the ignored Git-archive baseline and no non-WFL test logic.
+
+Independent source review found no fixture ownership or application-boundary
+issue. It requested ordered ledger snapshots so map iteration order cannot cause
+false failures; the test now serializes ordered lists of explicit fields.

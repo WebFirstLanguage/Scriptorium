@@ -1,0 +1,80 @@
+include from "fixtures/legacy-site.wfl"
+
+
+define action called legacy_history_signature with parameters site_spec:
+    store history_rows as http_rows of site_spec and "SELECT position, migration_id, checksum, applied_at FROM _orm_migrations ORDER BY position"
+    store ordered_values as []
+    for each history_row in history_rows:
+        push with ordered_values and [history_row["position"], history_row["migration_id"], history_row["checksum"], history_row["applied_at"]]
+    end for
+    return stringify_json of ordered_values
+end action
+define action called verify_legacy_http with parameters site_spec and expected_boots:
+    store locked_get as http_get of site_spec and "/install" and ""
+    call http_redirect with locked_get and "/"
+    store locked_post as http_post of site_spec and "/install" and "" and "site_title=Overwritten&username=intruder&password=Synthetic-pass-2026!"
+    call http_redirect with locked_post and "/"
+    for each route_path in ["/", "/extension-status"]:
+        store extension_reply as http_get of site_spec and route_path and ""
+        expect extension_reply["status"] to equal 200
+        expect extension_reply["body"] to contain "Custom extension theme"
+        expect extension_reply["body"] to contain "Legacy Extension Journal"
+        expect extension_reply["body"] to contain "Retained extension payload"
+        expect extension_reply["body"] to contain ("Boots: " with expected_boots)
+    end for
+    store post_reply as http_get of site_spec and "/post/heritage" and ""
+    expect post_reply["status"] to equal 200
+    expect post_reply["body"] to contain "Custom post theme"
+    expect post_reply["body"] to contain "Retained title"
+    expect post_reply["body"] to contain "Legacy Extension Journal"
+    expect post_reply["body"] to contain "legacy-admin"
+    expect post_reply["body"] to contain "<strong>legacy body</strong>"
+    store legacy_dashboard as http_get of site_spec and "/admin" and "sid=synthetic-legacy-session"
+    expect legacy_dashboard["status"] to equal 200
+    store rejected_mutation as http_post of site_spec and "/admin/settings" and "sid=synthetic-legacy-session" and "site_title=Overwritten&csrf_token="
+    expect rejected_mutation["status"] to equal 403
+    store login_cookie as http_login of site_spec and "legacy-admin" and "Synthetic-legacy-2026!"
+    store login_dashboard as http_get of site_spec and "/admin" and login_cookie
+    expect login_dashboard["status"] to equal 200
+    expect login_dashboard["body"] to contain "Legacy Extension Journal"
+    expect http_total of site_spec and "users" to equal 1
+    expect http_total of site_spec and "posts" to equal 1
+    expect http_total of site_spec and "fixture_notes" to equal 1
+    expect http_total of site_spec and "fixture_boots" to equal expected_boots
+    expect http_total of site_spec and "_orm_migrations" to equal 2
+end action
+
+describe "Legacy HTTP upgrade with deployment extensions":
+    test "adoption and restart preserve installed users custom routes theme and extension state":
+        store site_spec as http_new_site of "configured"
+        try:
+            call http_seed_legacy_site with site_spec
+            call http_install_legacy_extension with site_spec
+            expect length of (http_rows of site_spec and "SELECT name FROM sqlite_master WHERE name = '_orm_migrations'") to equal 0
+            expect length of (http_rows of site_spec and "SELECT name FROM pragma_table_info('sessions') WHERE name = 'csrf_token'") to equal 0
+            store migrated_history as ""
+            store running_site as http_launch of site_spec
+            try:
+                call verify_legacy_http with site_spec and 1
+                change migrated_history to legacy_history_signature of site_spec
+                store session_row as http_first_row of site_spec and "SELECT csrf_token FROM sessions WHERE id = 'synthetic-legacy-session'"
+                expect session_row["csrf_token"] to equal ""
+                expect running_site["startup"] to contain "Scriptorium theme: heritage"
+            finally:
+                call http_stop with running_site
+            end try
+            store restarted as http_launch of site_spec
+            try:
+                call verify_legacy_http with site_spec and 2
+                expect (legacy_history_signature of site_spec) to equal migrated_history
+                store integrity as http_first_row of site_spec and "PRAGMA integrity_check"
+                expect integrity["integrity_check"] to equal "ok"
+                expect length of (http_rows of site_spec and "PRAGMA foreign_key_check") to equal 0
+            finally:
+                call http_stop with restarted
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe

@@ -1,0 +1,26 @@
+// Copied by WFL into the disposable site's extension seam.
+include from "render.wfl"
+
+define action called site_ext_boot with parameters db:
+    store created as execute db with "CREATE TABLE IF NOT EXISTS fixture_boots (id INTEGER PRIMARY KEY AUTOINCREMENT, marker TEXT NOT NULL)"
+    store inserted as execute db with "INSERT INTO fixture_boots (marker) VALUES ('owned extension boot')"
+    return yes
+end action
+
+define action called site_ext_dispatch with parameters db and req and req_method and req_path and req_body and user:
+    check if req_method is equal to "GET" and (req_path is equal to "/" or req_path is equal to "/extension-status"):
+        store boot_rows as query db with "SELECT COUNT(*) AS total FROM fixture_boots"
+        store boot_row as boot_rows[0]
+        store note_rows as query db with "SELECT note FROM fixture_notes WHERE id = 5"
+        store note_row as note_rows[0]
+        create map ctx:
+            "site" is site_context of db and user
+            "boot_count" is boot_row["total"]
+            "retained_note" is note_row["note"]
+        end map
+        store body_html as render_public of "extension.html" and ctx
+        respond to req with body_html and content_type "text/html"
+        return yes
+    end check
+    return no
+end action
