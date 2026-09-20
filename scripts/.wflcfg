@@ -1,0 +1,8 @@
+# Complete-suite orchestration may include many individually bounded suites.
+timeout_seconds = 3600
+execution_logging = false
+debug_report_enabled = false
+allow_shell_execution = true
+shell_execution_mode = sanitized
+kill_on_shutdown = true
+max_buffer_size_bytes = 8388608

@@ -1,0 +1,10 @@
+store build_exists as is_dir of "build"
+store stale_build as path_exists of "build/existing.txt"
+store copied_git as path_exists of ".git"
+store copied_cache as path_exists of "__pycache__"
+display "RUN {\"suite\":" with (stringify_json of script_path) with ",\"cwd\":" with (stringify_json of current_directory) with ",\"build_exists\":" with (stringify_json of build_exists) with ",\"stale_build\":" with (stringify_json of stale_build) with ",\"copied_git\":" with (stringify_json of copied_git) with ",\"copied_cache\":" with (stringify_json of copied_cache) with "}"
+describe "Synthetic runner success":
+    test "real WFL assertion passes":
+        expect yes to equal yes
+    end test
+end describe

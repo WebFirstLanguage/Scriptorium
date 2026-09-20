@@ -26,7 +26,7 @@ jobs:
           - os: windows-latest
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +35,51 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Provision the current WFL nightly
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releases = gh api 'repos/WebFirstLanguage/wfl/releases?per_page=100' | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read WFL releases' }
+          $release = $releases | Where-Object { $_.tag_name -like 'nightly-*' -and -not $_.draft } | Select-Object -First 1
+          if (-not $release) { throw 'No published WFL nightly release found' }
+          $pattern = if ($IsWindows) { '^wfl-.*\.msi$' } else { '^wfl-.*-linux-x86_64-.*\.tar\.gz$' }
+          $assets = @($release.assets | Where-Object { $_.name -match $pattern })
+          if ($assets.Count -ne 1) { throw 'Expected one platform-specific WFL release asset' }
+          $asset = $assets[0]
+          $runtimeRoot = Join-Path $env:RUNNER_TEMP 'scriptorium-wfl'
+          New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+          $archive = Join-Path $runtimeRoot $asset.name
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($asset.digest -and $asset.digest -ne "sha256:$digest") { throw 'WFL release asset digest mismatch' }
+          if ($IsWindows) {
+            $expanded = Join-Path $runtimeRoot 'expanded'
+            $arguments = @('/a', "`"$archive`"", '/qn', "TARGETDIR=`"$expanded`"")
+            $installer = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+            if ($installer.ExitCode -ne 0) { throw "WFL extraction failed: $($installer.ExitCode)" }
+            $programs = @(Get-ChildItem -LiteralPath $expanded -Filter wfl.exe -File -Recurse)
+          } else {
+            tar -xzf $archive -C $runtimeRoot
+            if ($LASTEXITCODE -ne 0) { throw 'WFL extraction failed' }
+            $programs = @(Get-ChildItem -LiteralPath $runtimeRoot -Filter wfl -File -Recurse)
+          }
+          if ($programs.Count -ne 1) { throw 'Expected one extracted WFL executable' }
+          $runtimePath = $programs[0].FullName
+          $programs[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
+          $version = & $runtimePath --version
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted WFL runtime did not start' }
+          @(
+            '### Governance runtime',
+            "- Release: $($release.html_url)",
+            "- Asset: $($asset.browser_download_url)",
+            "- SHA256: $digest",
+            "- Runtime: $version",
+            "- Scriptorium: $env:GITHUB_SHA"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
       - name: Test repository tooling
-        run: python -m unittest discover -s tests/tooling -v
+        run: wfl scripts/run_tests.wfl --group tooling
       - name: Check repository hygiene
         run: python scripts/check_repo_hygiene.py

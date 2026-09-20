@@ -1,0 +1,176 @@
+include from "../../scripts/test_support.wfl"
+
+store repo_root as path_dirname of (path_dirname of script_directory)
+store fixture_sources as path_join of script_directory and "fixtures"
+store runtime_path as call current_executable
+check if (length of args) is greater than 0:
+    change runtime_path to args[0]
+end check
+store artifact_root as path_join of repo_root and "target/test-artifacts/runner" and (generate_uuid)
+
+define action called runner_fixture:
+    store fixture_root as path_join of artifact_root and (generate_uuid)
+    call makedirs with (path_join of fixture_root and "scripts")
+    call makedirs with (path_join of fixture_root and "TestPrograms")
+    for each helper_name in ["run_tests.wfl", "test_support.wfl", "resolve_runtime.wfl", ".wflcfg"]:
+        call copy_file with (path_join of repo_root and "scripts" and helper_name) and (path_join of fixture_root and "scripts" and helper_name)
+    end for
+    call copy_file with (path_join of script_directory and ".wflcfg") and (path_join of fixture_root and ".wflcfg")
+    return fixture_root
+end action
+
+define action called fixture_suite with parameters fixture_root and relative_path and behavior_name:
+    store destination as path_join of fixture_root and relative_path
+    call makedirs with (path_dirname of destination)
+    call copy_file with (path_join of fixture_sources and behavior_name) and destination
+end action
+
+define action called invoke_runner with parameters fixture_root and extra_arguments:
+    store runner_path as path_join of fixture_root and "scripts/run_tests.wfl"
+    store invocation as [runner_path]
+    for each argument_value in extra_arguments:
+        push with invocation and argument_value
+    end for
+    store outcome as test_execute of runtime_path and invocation and artifact_root and 30
+    display outcome["output"]
+    display outcome["error"]
+    return outcome
+end action
+
+define action called runner_observations with parameters output_text:
+    store observations as []
+    for each output_line in (string_split of output_text and newline):
+        check if starts_with of output_line and "RUN ":
+            store observed as parse_json of (substring of output_line and 4 and ((length of output_line) minus 4))
+            push with observations and observed
+        end check
+    end for
+    return observations
+end action
+
+describe "Complete WFL runner regressions":
+    teardown:
+        check if is_dir of artifact_root:
+            call remove_dir with artifact_root and yes
+        end check
+    end teardown
+
+    test "nested suites are sorted and run from repository cwd":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/z.test.wfl" and "runner-pass.wfl"
+        call fixture_suite with fixture_root and "TestPrograms/nested/a.test.wfl" and "runner-pass.wfl"
+        call test_write_text with (path_join of fixture_root and "TestPrograms/example.wfl") and "invalid helper must not be discovered"
+        store outcome as invoke_runner of fixture_root and ["--group", "application"]
+        expect outcome["exit_code"] to equal 0
+        store observed as runner_observations of outcome["output"]
+        expect (length of observed) to equal 2
+        expect (path_basename of observed[0]["suite"]) to equal "a.test.wfl"
+        expect (path_basename of observed[1]["suite"]) to equal "z.test.wfl"
+        for each run_details in observed:
+            expect (replace "\\" with "/" in run_details["cwd"]) to equal (replace "\\" with "/" in fixture_root)
+        end for
+    end test
+
+    test "real assertion and stderr failures preserve diagnostics and later suites run":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/a.test.wfl" and "runner-fail.wfl"
+        call fixture_suite with fixture_root and "TestPrograms/b.test.wfl" and "runner-error.wfl"
+        call fixture_suite with fixture_root and "TestPrograms/c.test.wfl" and "runner-pass.wfl"
+        store outcome as invoke_runner of fixture_root and ["--group", "application"]
+        expect outcome["exit_code"] to equal 1
+        expect outcome["output"] to contain "intentional fixture stdout"
+        expect outcome["output"] to contain "intentional fixture failure"
+        expect outcome["output"] to contain "intentional runtime stdout"
+        expect outcome["output"] to contain "Division by zero"
+        expect outcome["output"] to contain "a.test.wfl"
+        expect outcome["output"] to contain "3 suites: 1 passed, 2 failed"
+        expect (length of (runner_observations of outcome["output"])) to equal 1
+    end test
+
+    test "timeout fails continues and terminates owned descendants":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/a.test.wfl" and "runner-timeout.wfl"
+        call fixture_suite with fixture_root and "TestPrograms/b.test.wfl" and "runner-pass.wfl"
+        call fixture_suite with fixture_root and "helpers/delayed-write.wfl" and "delayed-write.wfl"
+        store outcome as invoke_runner of fixture_root and ["--group", "application", "--timeout", "2"]
+        expect outcome["exit_code"] to equal 1
+        expect (to_lowercase of outcome["output"]) to contain "timeout"
+        expect outcome["output"] to contain "2 suites: 1 passed, 1 failed"
+        expect (is_file of (path_join of fixture_root and "descendant-ready.txt")) to equal yes
+        wait for 3500 milliseconds
+        expect (path_exists of (path_join of fixture_root and "descendant-late.txt")) to equal no
+    end test
+
+    test "empty suite discovery fails before execution":
+        store fixture_root as call runner_fixture
+        store outcome as invoke_runner of fixture_root and ["--group", "application"]
+        expect outcome["exit_code"] to equal 2
+        expect outcome["output"] to contain "no WFL test suites"
+    end test
+
+    test "missing interpreter fails before execution":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/one.test.wfl" and "runner-pass.wfl"
+        store missing_runtime as path_join of fixture_root and "absent-wfl"
+        store outcome as invoke_runner of fixture_root and ["--group", "application", "--wfl", missing_runtime]
+        expect outcome["exit_code"] to equal 2
+        expect (length of (runner_observations of outcome["output"])) to equal 0
+        expect outcome["output"] to contain "WFL executable"
+    end test
+
+    test "nonpositive and nonfinite timeout values fail before execution":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/one.test.wfl" and "runner-pass.wfl"
+        for each invalid_timeout in ["0", "-1", "nan", "inf"]:
+            store outcome as invoke_runner of fixture_root and ["--group", "application", "--timeout", invalid_timeout]
+            expect outcome["exit_code"] to equal 2
+            expect (length of (runner_observations of outcome["output"])) to equal 0
+            expect outcome["output"] to contain "timeout must"
+        end for
+    end test
+
+    test "missing requested Scribe source fails before local suites":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/one.test.wfl" and "runner-pass.wfl"
+        store outcome as invoke_runner of fixture_root and ["--group", "application", "--include-scribe"]
+        expect outcome["exit_code"] to equal 2
+        expect outcome["output"] to contain "missing Scribe file"
+        expect (length of (runner_observations of outcome["output"])) to equal 0
+    end test
+
+    test "Scribe runs last in a removed disposable copy with a fresh build":
+        store fixture_root as call runner_fixture
+        call fixture_suite with fixture_root and "TestPrograms/one.test.wfl" and "runner-pass.wfl"
+        call test_write_text with (path_join of fixture_root and "lib/scribe/src/scribe.wfl") and "// synthetic source"
+        call fixture_suite with fixture_root and "lib/scribe/tests/scribe.test.wfl" and "runner-pass.wfl"
+        store original_build as path_join of fixture_root and "lib/scribe/build/existing.txt"
+        call test_write_text with original_build and "preserve"
+        call test_write_text with (path_join of fixture_root and "lib/scribe/.git") and "synthetic git pointer"
+        call test_write_text with (path_join of fixture_root and "lib/scribe/__pycache__/ignored.txt") and "stale cache"
+        store outcome as invoke_runner of fixture_root and ["--group", "application", "--include-scribe"]
+        expect outcome["exit_code"] to equal 0
+        store observed as runner_observations of outcome["output"]
+        expect (length of observed) to equal 2
+        expect observed[1]["build_exists"] to equal yes
+        expect observed[1]["stale_build"] to equal no
+        expect observed[1]["copied_git"] to equal no
+        expect observed[1]["copied_cache"] to equal no
+        expect (observed[1]["cwd"] is equal to (path_join of fixture_root and "lib/scribe")) to equal no
+        expect (path_exists of observed[1]["cwd"]) to equal no
+        expect (test_read_text of original_build) to equal "preserve"
+    end test
+
+    test "default command discovers every maintained group and excludes helpers":
+        store fixture_root as call runner_fixture
+        for each group_path in ["TestPrograms", "tests/tooling", "tests/integration", "examples"]:
+            call fixture_suite with fixture_root and (group_path with "/nested/example.test.wfl") and "runner-pass.wfl"
+            call test_write_text with (path_join of fixture_root and group_path and "helper.wfl") and "must never execute"
+        end for
+        call test_write_text with (path_join of fixture_root and "lib/scribe/src/scribe.wfl") and "// synthetic source"
+        call fixture_suite with fixture_root and "lib/scribe/tests/scribe.test.wfl" and "runner-pass.wfl"
+        store outcome as invoke_runner of fixture_root and []
+        expect outcome["exit_code"] to equal 0
+        expect outcome["output"] to contain "5 suites: 5 passed, 0 failed"
+        expect (length of (runner_observations of outcome["output"])) to equal 5
+    end test
+end describe

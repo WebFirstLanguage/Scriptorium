@@ -1,9 +1,10 @@
 # WFL test conversion inventory and runtime gates
 
-Status: requirements and executable capability evidence, 2026-09-20. This is
-not a claim that the WFL-only runner, ORM, migrations, or replacement suites
-have shipped. The existing Python tests and runner remain intact until their
-behavior can be preserved. The user explicitly authorized their conversion;
+Status: conversion inventory and executable evidence, 2026-09-20. The WFL runner
+and both tooling replacements pass against the reviewed source-built process
+runtime; published-nightly/final-revision acceptance is tracked separately.
+The original Python runner/tooling files were removed after all mapped WFL
+cases passed and independent source review accepted the mapping. The user explicitly authorized their conversion;
 this document does not request a separate layout migration.
 
 The acceptance basis is `testing.md`, the binding root policies, the attached
@@ -28,7 +29,7 @@ bounded child ownership, and no Python implementation of test behavior.
 | `tests/tooling/test_repo_hygiene.py` | 28 regression methods, mapped below. | WFL may invoke the unchanged Python hygiene checker as its implementation subject; Python must not own test behavior. |
 | `tests/integration/test_server_port.py` | 3 real HTTP startup tests, mapped below. | Preserve all existing cases and cleanup, then extend actual CMS journeys. |
 
-`scripts/run_tests.py` recursively discovers and lexically sorts regular
+The original `scripts/run_tests.py` recursively discovers and lexically sorts regular
 `TestPrograms/**/*.test.wfl` files, resolves its own repository root independent
 of the caller's directory, resolves the selected interpreter, and runs suites
 sequentially with repository cwd. Default suite timeout is 120 seconds. It
@@ -36,15 +37,29 @@ continues after failures and timeouts, preserves interpreter stdout/stderr,
 reports every result and the total, and exits 1 on suite failure. Empty
 discovery, bad interpreter, bad timeout, and missing requested Scribe sources
 fail before running tests. Setup/cleanup failures exit 2; interruption exits
-130. There are no retries. The WFL replacement needs the same observable
-failure behavior; exact exit-code compatibility requires an explicit decision
-because the current runtime has no general nonzero program-exit statement.
+130. There are no retries. This is the historical contract inventory.
+
+`scripts/run_tests.wfl` now discovers every maintained group by default,
+including pinned Scribe. Focused commands use `--group application`, `tooling`,
+`integration`, `examples`, or `scribe`; `--include-scribe` remains compatible
+when adding Scribe to a focused run. The same-runtime default uses
+`current_executable`; native launch resolves a bare `--wfl` name, then the runner
+passes that exact resolved runtime to every suite as `args[0]`. Suite failures
+and timeouts exit 1; setup/cleanup failures exit 2. Captured stdout and stderr
+contents are preserved in the runner's output, with stderr explicitly labeled.
+WFL owns interruption handling; exact Python KeyboardInterrupt formatting and
+exit 130 are not a promised cross-runtime CLI contract. Child-tree ownership
+and bounded cleanup remain required. Timeout arguments are finite positive JSON
+numbers up to one year; spell `.5` and `+1` as `0.5` and `1`.
 
 ## Runner regression mapping
 
-These are replacement requirements, not implemented replacement-test claims.
-The future WFL scenarios belong in `tests/tooling/`; fixture programs and the
-runner itself must also be WFL. Direct argument lists avoid shell quoting.
+The first eight tests in `tests/tooling/runner.test.wfl` implement the eight
+requirements below in the same order. The ninth verifies the complete default
+discovers all four maintained groups plus Scribe and excludes helper files.
+They passed 9/9 on Windows with process runtime commit `a32c74f1`.
+Direct argument lists avoid shell quoting; no fake Python interpreter remains
+in the replacement fixtures.
 
 | Python test method | Equivalent WFL test and required observation |
 |---|---|
@@ -65,7 +80,8 @@ executable shell test implementation.
 
 ## Hygiene regression mapping
 
-Common setup must be WFL: make a unique disposable directory, run `git init`,
+`tests/tooling/hygiene.test.wfl` implements the 28 rows below, in the same order,
+and passed 28/28 on Windows. Common setup is WFL: make a unique disposable directory, run `git init`,
 write every profile-required file and synthetic sources, stage them, and add
 the approved Scribe gitlink with `git update-index --cacheinfo`. The checker
 receives `--root` explicitly, so these tests do not require changing the parent
@@ -131,6 +147,8 @@ port values; new HTTP cases should extend this coverage, not reduce it.
 
 ## Runtime evidence and upstream remedies
 
+The following table preserves the initial Red findings, before the upstream
+remedies; it is not the current source-built candidate's capability status.
 Source inspected: WFL revision `cb1dadaad96939a4450a6eb2b3a6a51678035b7f`.
 Executable probes were run on Windows with official nightly WFL `26.9.12`
 from the locally extracted release, with that binary's directory first on
@@ -183,24 +201,30 @@ image before the complete WFL-only runner can be claimed verified.
 
 ## CI and documentation conversion checklist
 
-The current Governance workflow runs Python tooling tests and the hygiene
-checker on Blacksmith Ubuntu and GitHub Windows. Its replacement must provision
-WFL on both platforms, run the WFL tooling suites there, and retain every
-hygiene-check purpose. Python may remain for the checker implementation, but
-must not execute tests or test drivers.
+The converted Governance workflow provisions WFL on Blacksmith Ubuntu and GitHub
+Windows, records the published release URL/asset/SHA256/version, runs
+`wfl scripts/run_tests.wfl --group tooling`, and retains the hygiene checker.
+Python remains only for that non-test checker implementation.
 
-The current WFL tests workflow pulls `bsbyrdwfl/wfl:nightly`, resolves its digest,
-records runtime/Scriptorium/Scribe versions, and runs the Python runner and
-Python HTTP tests in the resolved container. Preserve provenance, read-only
-source safety, Blacksmith execution, cleanup and failure propagation while
-moving suite, Scribe-copy and HTTP orchestration into WFL. The Update Scribe
-workflow embeds old test commands in generated PR bodies and must be updated
-with the eventual verified WFL commands too.
+The WFL tests workflow pulls `bsbyrdwfl/wfl:nightly`, resolves its digest,
+records runtime/Scriptorium/Scribe versions, and runs `wfl scripts/run_tests.wfl`
+in that resolved container. A read-only source mount is copied into a disposable
+writable checkout. Suite, Scribe-copy and HTTP orchestration are WFL. The Update
+Scribe generated PR checklist uses these same commands. Final remote runtime
+acceptance is pending until a published nightly contains the upstream remedies.
 
-Update `.repo-hygiene.toml` required file paths, `REPOSITORY_HYGIENE.md`,
-`CLAUDE.md`, `CONTRIBUTING.md`, `testing.md`, and affected CI guidance together
-only after the replacement is working. Keep `TestPrograms/`, `tests/tooling/`,
-`tests/integration/`, and the application's existing include tree.
+The hygiene profile now requires the WFL runner/helpers/config and both tooling
+suites. Guidance uses the same complete/focused commands. The examples directory
+houses the explicitly requested executable ORM/migration progression; the
+application and test include layouts are retained.
+
+The unchanged original Python tooling tests passed **36/36** before removal;
+the replacement focused command passed **2 suites, 37/37 tests**. Its intentional
+WFL assertion fixture returns runner exit 1, preserves diagnostics, and allows
+later suites to complete. Its owned child/grandchild timeout fixture proves no
+late marker survives cleanup. Fixture parser mistakes encountered during
+development are not counted as behavioral Red evidence. Full candidate and
+remote deliberate-failure evidence remain separate final acceptance steps.
 
 Before removing Python versions, check every row above against executable WFL
 scenarios. Then run the complete suite including pinned Scribe, file-backed

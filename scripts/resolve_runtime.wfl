@@ -1,0 +1,2 @@
+// Used only to resolve an explicit --wfl program through native PATH launch.
+display call current_executable

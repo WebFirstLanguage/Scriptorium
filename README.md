@@ -211,19 +211,19 @@ docs/                 Architecture notes + THEMING.md + PROJECT-LAYOUT.md + scre
 
 ## Tests
 
-From the repository root, with Python 3.11+ and WFL on PATH:
+From the repository root, with WFL, Git and Python 3.11+ on PATH (Python is
+only needed for the repository hygiene checker):
 
 ```sh
-python scripts/run_tests.py                  # all five Scriptorium suites
-python scripts/run_tests.py --include-scribe # also test the pinned Scribe engine
-python -m unittest discover -s tests/integration -v # HTTP port configuration
-python -m unittest discover -s tests/tooling -v
+wfl scripts/run_tests.wfl                     # complete suite, including Scribe
+wfl scripts/run_tests.wfl --group integration # focused HTTP workflows
+wfl scripts/run_tests.wfl --group tooling     # runner and hygiene regressions
 python scripts/check_repo_hygiene.py
 ```
 
 Individual suites still run with `wfl --test TestPrograms/<name>.test.wfl`.
-The [WFL tests workflow](.github/workflows/wfl-tests.yml) runs all five
-Scriptorium suites and the pinned Scribe suite on Blacksmith Linux using the
+The [WFL tests workflow](.github/workflows/wfl-tests.yml) runs application,
+ORM/migration/recovery, HTTP, tooling, examples and pinned Scribe suites on Blacksmith Linux using the
 latest `bsbyrdwfl/wfl:nightly` Docker image. It pulls the nightly tag on each run
 and records the resolved image digest, runtime version, and tested source
 revisions in the job summary. The Governance workflow checks tooling and
@@ -248,7 +248,7 @@ tested against this Scriptorium — but it also means Scribe moving forward does
 ```sh
 scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
 scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
-python scripts/run_tests.py --include-scribe # app and upstream regression suites
+wfl scripts/run_tests.wfl          # complete suite, including upstream Scribe
 git commit -m "chore(scribe): update lib/scribe"
 ```
 

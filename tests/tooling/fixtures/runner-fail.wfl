@@ -1,0 +1,6 @@
+display "intentional fixture stdout"
+describe "Synthetic runner failure":
+    test "intentional fixture failure":
+        expect "deliberate failure" to equal "success"
+    end test
+end describe

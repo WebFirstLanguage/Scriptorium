@@ -1,0 +1,4 @@
+store runtime_path as call current_executable
+store child_path as path_join of current_directory and "helpers/delayed-write.wfl"
+wait for spawn command runtime_path with arguments [child_path, current_directory] as owned_child
+wait for 10 seconds

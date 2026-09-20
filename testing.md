@@ -5,7 +5,7 @@ governance to this WFL application. It defines both required evidence and the
 limits of the tooling that exists today. It does not claim that the repository
 already implements every gate required for a release.
 
-- Policy and profile version: 1.0.
+- Policy and profile version: 1.1.
 - Adopted: 2026-09-12; CI profile updated: 2026-09-20.
 - Test-suite and infrastructure owner: the Maintainer named in
   [GOVERNANCE.md](GOVERNANCE.md).
@@ -65,7 +65,8 @@ Missing automation does not exempt new or changed behavior from these rules.
 The application needs WFL with its web server, SQLite, crypto, and testing
 built-ins, plus the exact Scribe commit recorded at `lib/scribe`. Initialize
 submodules with `git submodule update --init --recursive`. Python 3.11 or newer
-is needed only for repository tooling. Run individual WFL suites from the
+and Git are needed to exercise the existing hygiene checker; every test
+scenario, fixture, assertion, helper and driver is WFL. Run individual suites from the
 Scriptorium root so relative includes, templates, and assets resolve correctly.
 
 WFL 26.9.3 on Windows is the local adoption baseline: the five application
@@ -75,8 +76,9 @@ OS, Scriptorium revision, and Scribe revision with runtime evidence. No Linux,
 macOS, alternate WFL version, or production configuration is release-verified
 merely because these suites passed on Windows.
 
-The five suites use in-memory SQLite and direct action calls; they need no
-external credentials or service. Test data MUST be synthetic. For HTTP/UI and
+The original five suites include in-memory SQLite and direct action calls.
+Additional ORM, migration and HTTP suites use disposable file-backed databases.
+They need no external credentials or service. Test data MUST be synthetic. For HTTP/UI and
 file-backed tests, use a disposable checkout, a temporary `data_dir`, loopback
 binding, and an isolated port. Avoid a live site's database or uploads. Keep
 test output in the approved locations in
@@ -84,22 +86,39 @@ test output in the approved locations in
 
 ## Executable checks
 
-The portable entry point discovers every `TestPrograms/**/*.test.wfl` suite:
+The complete portable entry point recursively discovers regular `*.test.wfl`
+files under `TestPrograms/`, `tests/tooling/`, `tests/integration/`, and
+`examples/`, sorts each group, then runs the pinned Scribe suite:
 
 ```sh
-python scripts/run_tests.py
-python scripts/run_tests.py --include-scribe
+wfl scripts/run_tests.wfl
+wfl scripts/run_tests.wfl --group application
+wfl scripts/run_tests.wfl --group tooling
+wfl scripts/run_tests.wfl --group integration
+wfl scripts/run_tests.wfl --group examples
+wfl scripts/run_tests.wfl --group scribe
 ```
 
-`--wfl /absolute/path/to/wfl` selects the executable. `--timeout 120` sets the
+The default executable is `current_executable`, the exact runtime that launched
+the runner. `--wfl /absolute/path/to/wfl` selects another executable; a bare
+program name uses native PATH lookup. The resolved absolute identity is passed
+to every suite as `args[0]`. `--timeout 120` sets the
 maximum seconds per suite; 120 is the default. The runner executes suites
-sequentially from the proper working directory, preserves interpreter output,
+sequentially from the proper working directory, preserves stdout and stderr
+contents in its output (stderr has a label),
 reports every suite's result, and exits nonzero if any suite fails or times out.
-An empty suite set, missing interpreter, or missing requested Scribe source is
-an error. There are no automatic retries.
+An empty selected group, missing interpreter, invalid timeout, or missing
+requested Scribe source is an error before suites start. Suite failure and
+timeout exit 1; setup/cleanup failure exits 2. There are no automatic retries.
+The runner owns child process trees, including on hard timeout. All temporary
+fixtures remain under ignored `target/test-artifacts/` and are removed after
+their suites. A terminated host/CI container can leave disposable files; it
+does not authorize reuse of a live site's data. Helpers do not end in `.test.wfl`.
 
-`--include-scribe` also executes the upstream `tests/scribe.test.wfl` from a
-temporary copy of the pinned submodule, with a fresh `build/` for its fixtures.
+The default command executes upstream `tests/scribe.test.wfl` from a temporary
+copy of the pinned submodule, excluding `.git`, existing `build/`, and caches,
+with a fresh `build/` for its fixtures. `--include-scribe` remains a compatibility
+option to add Scribe to a focused group.
 This avoids writing test output into the dependency checkout. Run it for Scribe
 pin changes and changes affecting Scribe integration. CMS-specific Scribe
 regressions remain in `TestPrograms/scribe.test.wfl` even when upstream tests
@@ -109,14 +128,15 @@ The HTTP port configuration checks start disposable Scriptorium processes and
 exercise `/install` using synthetic temporary databases:
 
 ```sh
-python -m unittest discover -s tests/integration -v
+wfl scripts/run_tests.wfl --group integration
 ```
 
-These checks require WFL on `PATH` (or `WFL_EXECUTABLE` set to its executable)
-and an available loopback port 8080. They check an explicitly configured port,
-the default when the setting or file is absent, and startup URLs. They do not
-exercise installer submission or other complete CMS journeys. The WFL tests
-workflow runs them inside its disposable nightly container after the WFL suites.
+These checks use the selected WFL executable and require an available loopback
+port 8080 for default-port cases. They preserve configured/default port and
+startup URL checks and extend real installer, auth, content, users, media,
+throttling and restore workflows. See [the integration suite](tests/integration/README.md)
+for individual scenarios and fixture ownership. No environment-variable
+interpreter override is needed; use the shared `--wfl` option.
 
 | Existing suite | Direct command from the repository root | What it currently exercises |
 |---|---|---|
@@ -131,16 +151,18 @@ upgrade. The auth suite does not test the login router or complete role matrix.
 The render suite tests path selection; it does not render every theme template
 through HTTP. Keep these distinctions in PR descriptions.
 
-Repository tooling checks run independently of WFL:
+Repository tooling checks use the same WFL runner:
 
 ```sh
 python scripts/check_repo_hygiene.py
-python -m unittest discover -s tests/tooling -v
+wfl scripts/run_tests.wfl --group tooling
 ```
 
 The tooling suites check the validation and runner failure paths. They do not
 substitute for the application suites. Application tests stay in the existing
-`TestPrograms/` layout; Python tooling tests live in `tests/tooling/`.
+`TestPrograms/` layout; WFL tooling tests live in `tests/tooling/` and HTTP tests
+in `tests/integration/`. The [conversion inventory](docs/wfl-test-inventory.md)
+maps all eight original runner requirements and 28 hygiene cases.
 
 ## CMS boundaries and critical journeys
 
@@ -210,22 +232,32 @@ keyboard behavior, or data integrity.
 
 [Governance](.github/workflows/governance.yml) runs repository hygiene and tooling
 checks on Blacksmith Linux and GitHub-hosted Windows.
-[WFL tests](.github/workflows/wfl-tests.yml) runs the five application suites and the pinned Scribe suite via
-`python3 scripts/run_tests.py --include-scribe` on
+[WFL tests](.github/workflows/wfl-tests.yml) runs the complete WFL suite via
+`wfl scripts/run_tests.wfl` on
 `blacksmith-2vcpu-ubuntu-2404`. Both workflows run for pushes and pull requests to
 `main` and support manual dispatch.
 
 WFL tests pulls `bsbyrdwfl/wfl:nightly` from Docker Hub for every run, resolves
 the image digest, and uses that immutable image for that run's runtime checks.
-Python is installed in the disposable test container and the source checkout is
-mounted read-only. The job summary records the resolved image digest,
+Python and Git are installed only for the hygiene checker subject. No Python
+test runner or test implementation executes. The source checkout is mounted
+read-only and copied into the writable disposable container for fixtures.
+The job summary records the resolved image digest,
 `wfl --version`, and tested Scriptorium and Scribe revisions. The nightly tag is
 moving: retain the run URL and digest with PR evidence so a later nightly does
 not obscure which runtime was tested. The nightly workflow is not a declaration
 that every nightly, platform, or production configuration is supported.
 
-Automated HTTP coverage is limited to startup port configuration and serving
-the installer form. Complete HTTP/browser journeys remain unautomated. The
+Governance provisions the latest published nightly release on Linux and Windows
+and records its asset URL, SHA256 and runtime version before running WFL tooling
+regressions. The runner requires WFL's owned-process cwd/timeout/full-result/close
+API, explicit exit status and `current_executable`; the HTTP/ORM suites also need
+the redirect and transaction remedies described in [runtime review](docs/runtime-review.md).
+A source-built candidate passing locally does not establish a published nightly
+pass; final immutable nightly and Windows/Linux remote results remain merge gates.
+
+Automated HTTP suites cover application journeys; browser interaction and
+accessibility coverage remain separate requirements. The
 scheduled Scribe updater only proposes dependency changes; its successful run
 alone is not runtime test evidence.
 
@@ -263,7 +295,7 @@ remain a separate adoption item below.
 
 | Gap | Required next step and trigger |
 |---|---|
-| HTTP coverage is limited to port configuration; no browser automation | Add real-boundary regression coverage with each affected behavior change; plan coverage of all critical journeys before the next production release. |
+| No browser automation or full accessibility evidence | Retain real HTTP boundary regressions and add browser checks for changed interactions; verify critical journeys before production releases. |
 | No declared compatibility matrix or release-candidate workflow | Define supported runtime/platform/configuration tuples and retain candidate results before the next production release. |
 | No coverage measurement, performance budgets, or scheduled extended tests | Establish baselines and risk-based targets before claiming those properties; review at the next profile review. |
 | Host protection settings are external | Maintainer verifies required checks and review rules on GitHub at adoption and after workflow changes. |

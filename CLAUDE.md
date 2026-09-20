@@ -74,14 +74,17 @@ violate the standard.
 - **Scribe is a submodule.** Don't edit `lib/scribe/` in place; changes go
   upstream to WebFirstLanguage/Scribe, then bump via
   `scripts/update-scribe.sh`.
-- **Checks:** `python scripts/run_tests.py` runs every Scriptorium WFL suite;
-  add `--include-scribe` for dependency updates. Run
-  `python -m unittest discover -s tests/tooling -v` and
-  `python scripts/check_repo_hygiene.py` for repository tooling and hygiene.
-  Python 3.11+ is needed for tooling; `wfl` is needed for application tests.
-  The Governance workflow runs tooling tests and hygiene on Blacksmith Linux
-  and GitHub-hosted Windows. The WFL tests workflow runs the application and
-  pinned Scribe suites on Blacksmith using a freshly pulled `bsbyrdwfl/wfl:nightly` image;
+- **Checks:** `wfl scripts/run_tests.wfl` runs the complete suite: application,
+  ORM/migrations/recovery, HTTP integration, tooling, executable examples, and
+  pinned Scribe. `--group tooling` or `--group application` selects a focused
+  run. Run `python scripts/check_repo_hygiene.py` for the repository hygiene gate.
+  Every test, fixture, assertion, helper and driver is WFL. Python 3.11+ and Git
+  are required only for the hygiene checker's implementation subject. The runner
+  uses the WFL executable that launched it, with an optional `--wfl` override.
+  It needs the owned-process completion and `current_executable` runtime APIs.
+  Governance provisions WFL and runs tooling and hygiene on Blacksmith Linux
+  and GitHub-hosted Windows. WFL tests runs the complete suite on Blacksmith
+  using a freshly pulled `bsbyrdwfl/wfl:nightly` image;
   its summary records the resolved image digest, runtime version, and source
   revisions. See
   [testing.md](testing.md) for commands, coverage limits, and merge evidence.

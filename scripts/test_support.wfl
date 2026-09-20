@@ -1,0 +1,48 @@
+// Shared WFL test infrastructure. These helpers contain no test discovery.
+define action called test_write_text with parameters destination and text_value:
+    call makedirs with (path_dirname of destination)
+    open file at destination for writing as output_file
+    try:
+        wait for write content text_value into output_file
+    finally:
+        close file output_file
+    end try
+end action
+
+define action called test_read_text with parameters source_path:
+    open file at source_path for reading as input_file
+    try:
+        wait for store text_value as read content from input_file
+        return text_value
+    finally:
+        close file input_file
+    end try
+end action
+
+define action called test_copy_tree with parameters source_path and destination:
+    call makedirs with destination
+    store entries as list_dir of source_path
+    for each entry_name in entries:
+        check if entry_name is not equal to ".git" and entry_name is not equal to "build" and entry_name is not equal to "__pycache__":
+            store child_source as path_join of source_path and entry_name
+            store child_destination as path_join of destination and entry_name
+            check if is_dir of child_source:
+                call test_copy_tree with child_source and child_destination
+            otherwise:
+                call copy_file with child_source and child_destination
+            end check
+        end check
+    end for
+end action
+
+// Completion drains both diagnostic streams and releases the owned process.
+// The runtime also kills descendants on timeout and on interpreter shutdown.
+define action called test_execute with parameters program_path and argument_list and working_path and timeout_seconds:
+    wait for spawn command program_path with arguments argument_list in directory working_path as child_process
+    try:
+        wait for process child_process to complete with timeout timeout_seconds and read result as outcome
+        return outcome
+    finally:
+        close process child_process
+    end try
+end action

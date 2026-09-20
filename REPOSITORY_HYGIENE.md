@@ -22,7 +22,9 @@ deliberate. A migration needs its own proposal and maintainer decision.
 | Public themes | `themes/` |
 | Shipped CSS, fonts, logos, other source assets | `static/`, or the owning theme |
 | WFL behavior tests | `TestPrograms/` |
-| Python automation regression tests | `tests/tooling/` |
+| WFL automation regression tests and their WFL fixtures | `tests/tooling/` |
+| WFL HTTP integration drivers and fixtures | `tests/integration/` |
+| Executable ORM and migration examples | `examples/` (`*.test.wfl` is discovered) |
 | Contributor and CI automation | `scripts/`, `.github/` |
 | Maintained docs, designs, screenshots | `docs/` |
 | Shared agent instructions | [CLAUDE.md](CLAUDE.md); [AGENTS.md](AGENTS.md) is its discovery adapter |
@@ -64,11 +66,12 @@ to keep checkout inspection portable and prevent reads outside the repository.
 
 ## Enforcement and its limits
 
-Run from a checkout with Git and Python 3.11 or later:
+Run from a checkout with WFL, Git and Python 3.11 or later. Python implements
+the existing hygiene checker; its regression scenarios and fixtures are WFL:
 
 ```sh
 python scripts/check_repo_hygiene.py
-python -m unittest discover -s tests/tooling -p "test_*.py"
+wfl scripts/run_tests.wfl --group tooling
 ```
 
 The [governance workflow](.github/workflows/governance.yml) runs the hygiene gate

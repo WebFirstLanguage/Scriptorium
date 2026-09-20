@@ -1,0 +1,115 @@
+include from "../../scripts/test_support.wfl"
+
+store migration_repo_root as path_dirname of (path_dirname of script_directory)
+store migration_runtime as call current_executable
+
+define action called migration_cli_fixture:
+    store run_id as generate_uuid
+    store site_root as path_join of migration_repo_root and "target/test-artifacts/migration-cli" and run_id
+    try:
+        call makedirs with (path_join of site_root and "scripts")
+        call copy_file with (path_join of migration_repo_root and "scripts/migrate.wfl") and (path_join of site_root and "scripts/migrate.wfl")
+        call test_copy_tree with (path_join of migration_repo_root and "lib/orm") and (path_join of site_root and "lib/orm")
+        call test_copy_tree with (path_join of migration_repo_root and "app/migrations") and (path_join of site_root and "app/migrations")
+        call copy_file with (path_join of migration_repo_root and "app/migrations.wfl") and (path_join of site_root and "app/migrations.wfl")
+        call copy_file with (path_join of migration_repo_root and "app/util.wfl") and (path_join of site_root and "app/util.wfl")
+        return site_root
+    when error:
+        check if is_dir of site_root:
+            call remove_dir with site_root and yes
+        end check
+        call raise_error with error_message
+    end try
+end action
+
+define action called migration_cli_run with parameters site_root and argument_values:
+    store child_args as ["scripts/migrate.wfl"]
+    for each argument_value in argument_values:
+        push with child_args and argument_value
+    end for
+    return test_execute of migration_runtime and child_args and site_root and 30
+end action
+
+describe "Migration CLI target selection and lifecycle":
+    test "absent status and plan create no database or data directory with default or configured paths":
+        store site_root as migration_cli_fixture
+        try:
+            store default_status as migration_cli_run of site_root and ["status"]
+            expect default_status["exit_code"] to equal 0
+            expect default_status["output"] contains "Database absent" to be yes
+            expect file exists at (path_join of site_root and "scriptorium.db") to be no
+            call test_write_text with (path_join of site_root and ".wflcfg") and "logging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\ndata_dir = ignored-second-value\n"
+            store configured_plan as migration_cli_run of site_root and ["plan"]
+            expect configured_plan["exit_code"] to equal 0
+            expect configured_plan["output"] contains "configured-data" to be yes
+            expect configured_plan["output"] contains "Planned fresh apply: 2" to be yes
+            expect is_dir of (path_join of site_root and "configured-data") to be no
+            store override_plan as migration_cli_run of site_root and ["plan", "--database", "override/site.db", "--target", "20200101000000"]
+            expect override_plan["exit_code"] to equal 0
+            expect override_plan["output"] contains "Planned fresh apply: 1" to be yes
+            expect is_dir of (path_join of site_root and "override") to be no
+        finally:
+            call remove_dir with site_root and yes
+        end try
+    end test
+
+    test "configured targeted apply repeat refusal and changed-source errors have real process statuses":
+        store site_root as migration_cli_fixture
+        try:
+            call test_write_text with (path_join of site_root and ".wflcfg") and "logging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\n"
+            store first_apply as migration_cli_run of site_root and ["up", "--target", "20200101000000"]
+            expect first_apply["exit_code"] to equal 0
+            expect first_apply["output"] contains "Applied migrations: 1" to be yes
+            store next_apply as migration_cli_run of site_root and ["up"]
+            expect next_apply["exit_code"] to equal 0
+            expect next_apply["output"] contains "Applied migrations: 2" to be yes
+            store repeated as migration_cli_run of site_root and ["up"]
+            expect repeated["exit_code"] to equal 0
+            store refused as migration_cli_run of site_root and ["down", "--count", "1"]
+            expect refused["exit_code"] to equal 1
+            expect refused["output"] contains "irreversible" to be yes
+            store unknown_target as migration_cli_run of site_root and ["up", "--target", "missing"]
+            expect unknown_target["exit_code"] to equal 1
+            store invalid_count as migration_cli_run of site_root and ["down", "--count", "1.5"]
+            expect invalid_count["exit_code"] to equal 1
+            store source_path as path_join of site_root and "app/migrations/20200102000000_session_csrf.wfl"
+            store original_source as test_read_text of source_path
+            call test_write_text with source_path and (original_source with "\n// edited immutable source\n")
+            store edited_status as migration_cli_run of site_root and ["status"]
+            expect edited_status["exit_code"] to equal 1
+            expect edited_status["output"] contains "checksum" to be yes
+            expect file exists at (path_join of site_root and "scriptorium.db") to be no
+            store database_path as path_join of site_root and "configured-data/scriptorium.db"
+            open database at ("sqlite://" with database_path) as inspection_db
+            try:
+                store ledger_rows as query inspection_db with "SELECT * FROM _orm_migrations"
+                store event_rows as query inspection_db with "SELECT * FROM _orm_migration_events"
+                expect length of ledger_rows to equal 2
+                expect length of event_rows to equal 2
+            finally:
+                close database inspection_db
+            end try
+        finally:
+            call remove_dir with site_root and yes
+        end try
+    end test
+
+    test "scaffold gives explicit registration instructions and never opens a database":
+        store site_root as migration_cli_fixture
+        try:
+            store before_names as list_dir of (path_join of site_root and "app/migrations")
+            store scaffolded as migration_cli_run of site_root and ["new", "add_summary"]
+            expect scaffolded["exit_code"] to equal 0
+            expect scaffolded["output"] contains "Append migration_" to be yes
+            expect scaffolded["output"] contains "empty scaffolds are rejected" to be yes
+            store after_names as list_dir of (path_join of site_root and "app/migrations")
+            expect length of after_names to equal ((length of before_names) plus 1)
+            expect file exists at (path_join of site_root and "scriptorium.db") to be no
+            store malicious_name as migration_cli_run of site_root and ["new", "../escape"]
+            expect malicious_name["exit_code"] to equal 1
+            expect file exists at (path_join of site_root and "app/escape.wfl") to be no
+        finally:
+            call remove_dir with site_root and yes
+        end try
+    end test
+end describe
