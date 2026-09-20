@@ -55,6 +55,25 @@ stdout. The runtime handles user interruption and owns shutdown cleanup;
 Python's specific KeyboardInterrupt message/status is not a portable promise.
 Timeouts use finite positive JSON-number notation up to one year.
 
+The subprocess wait limit is separate from WFL's whole-invocation execution
+budget. The current CLI clamps `timeout_seconds` to at most 300 seconds;
+zero becomes one second, and no CLI timeout override disables the clamp.
+Accordingly `scripts/.wflcfg` now states 300 instead of the ineffective 3600.
+This correction changes no effective behavior. Each child can also have a
+shorter runtime deadline from its own configuration; `--timeout` does not
+extend either runtime deadline.
+
+The frozen complete suite at Scriptorium
+`3bc7b4faaf9c000047d940f0e420067b777db5c9` passed **41/41 suites** on combined WFL
+`df6ad9a2`. The new `target/full-candidate-final.log` file's creation and final
+write timestamps span approximately **160.5 seconds**, below the effective
+300-second bound. This is file-metadata timing, not a separate benchmark.
+The portability review confirmed that published nightly asset patterns match
+the extracted executable layouts, the Docker root override can write its
+disposable `/work` copy, and native WFL failure statuses propagate through both
+governance platforms and the complete-suite Docker command. Exact-revision
+remote Green remains required; this source review does not claim it.
+
 ## Final acceptance still required
 
 The full application/ORM/migration/recovery/HTTP/example suite and final-revision

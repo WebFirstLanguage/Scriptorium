@@ -1,5 +1,6 @@
-# Complete-suite orchestration may include many individually bounded suites.
-timeout_seconds = 3600
+# WFL currently caps the whole CLI invocation at 300 seconds.
+# Each child suite also has the runner's separate bounded wait.
+timeout_seconds = 300
 execution_logging = false
 debug_report_enabled = false
 allow_shell_execution = true

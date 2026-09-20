@@ -104,10 +104,18 @@ The default executable is `current_executable`, the exact runtime that launched
 the runner. `--wfl /absolute/path/to/wfl` selects another executable; a bare
 program name uses native PATH lookup. The resolved absolute identity is passed
 to every suite as `args[0]`. `--timeout 120` sets the
-maximum seconds per suite; 120 is the default. The runner executes suites
+maximum subprocess wait per suite; 120 is the default. A suite's own WFL runtime
+configuration can impose a shorter limit. The current WFL CLI also caps the
+entire runner invocation at 300 seconds, including discovery and all suites;
+`scripts/.wflcfg` uses that effective maximum. `--timeout` does not extend the
+whole-run limit, and setting WFL's `timeout_seconds` to zero does not disable it.
+The CI job's longer timeout also includes provisioning and cleanup; it does not
+extend WFL's execution budget. The runner executes suites
 sequentially from the proper working directory, preserves stdout and stderr
 contents in its output (stderr has a label),
-reports every suite's result, and exits nonzero if any suite fails or times out.
+reports suite results while the whole-run budget remains, and exits nonzero if
+any suite fails or times out. Exhausting the whole-run budget stops the command
+with a nonzero exit and owned-process cleanup.
 An empty selected group, missing interpreter, invalid timeout, or missing
 requested Scribe source is an error before suites start. Suite failure and
 timeout exit 1; setup/cleanup failure exits 2. There are no automatic retries.
