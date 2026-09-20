@@ -79,8 +79,11 @@ violate the standard.
   `python -m unittest discover -s tests/tooling -v` and
   `python scripts/check_repo_hygiene.py` for repository tooling and hygiene.
   Python 3.11+ is needed for tooling; `wfl` is needed for application tests.
-  The Governance workflow runs tooling tests and hygiene on Linux and Windows;
-  WFL runtime suites currently require recorded local results. See
+  The Governance workflow runs tooling tests and hygiene on Blacksmith Linux
+  and GitHub-hosted Windows. The WFL tests workflow runs the application and
+  pinned Scribe suites on Blacksmith using a freshly pulled `bsbyrdwfl/wfl:nightly` image;
+  its summary records the resolved image digest, runtime version, and source
+  revisions. See
   [testing.md](testing.md) for commands, coverage limits, and merge evidence.
 - **`data_dir` is an application convention, not a WFL runtime feature.**
   `main.wfl` reads `.wflcfg` itself at boot and parses the key via

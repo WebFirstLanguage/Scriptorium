@@ -7,10 +7,11 @@
 # Scribe commits in the body, so the bump is reviewed rather than silent.
 #
 # Note on CI: GITHUB_TOKEN-created PR runs may require Maintainer approval.
-# Approve the pending Governance run, or use Run workflow on the PR branch;
-# verify that the successful run covers the current revision before merging.
-# Runtime tests also need recorded results; see testing.md. No extra token is
-# needed for the manual Governance workflow.
+# Approve pending Governance and WFL tests runs, or use Run workflow for both
+# workflows on the PR branch. Verify that successful runs cover the current
+# revision before merging.
+# Link both checks, including the nightly image digest; see testing.md. No extra
+# token is needed for manual workflow dispatch.
 # https://docs.github.com/en/actions/concepts/security/github_token
 #
 # To bump by hand instead, run scripts/update-scribe.sh.
@@ -135,12 +136,12 @@ jobs:
             echo
             echo '| Check or exact command | Result and evidence |'
             echo '|---|---|'
-            echo '| `python scripts/run_tests.py --include-scribe` | Not run — this workflow prepares the dependency bump. Record the local and upstream suite results, including failures. |'
+            echo '| `python3 scripts/run_tests.py --include-scribe` | Pending — this workflow prepares the dependency bump. Link WFL tests results for the current revision, including the nightly image digest and runtime version; record failures. |'
             echo '| `python -m unittest discover -s tests/tooling -v` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
             echo '| `python scripts/check_repo_hygiene.py` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
             echo '| Affected HTTP/UI rendering journeys | Not run — upstream diff review is needed to identify affected paths. Record setup, expected/actual outcome, and evidence. |'
             echo
-            echo 'Approve any pending Governance run, or run Governance manually on this branch. Verify that successful checks cover the current revision before merging.'
+            echo 'Approve any pending Governance and WFL tests runs, or run both workflows manually on this branch. Verify that successful checks cover the current revision before merging.'
             echo
             echo '## Checklist'
             echo

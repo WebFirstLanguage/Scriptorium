@@ -6,7 +6,7 @@ limits of the tooling that exists today. It does not claim that the repository
 already implements every gate required for a release.
 
 - Policy and profile version: 1.0.
-- Adopted and reviewed: 2026-09-12.
+- Adopted: 2026-09-12; CI profile updated: 2026-09-20.
 - Test-suite and infrastructure owner: the Maintainer named in
   [GOVERNANCE.md](GOVERNANCE.md).
 - Next adoption-gap review: 2026-10-12, or before the next affected behavioral
@@ -194,19 +194,33 @@ keyboard behavior, or data integrity.
 
 ## CI, merge, and release gates
 
-[.github/workflows/governance.yml](.github/workflows/governance.yml) runs the
-repository hygiene and tooling checks. The application suites still require a
-local WFL run; there is no pinned-runtime application-test CI job or automated
-HTTP/browser journey suite in this repository. The scheduled Scribe updater
-proposes dependency changes; it is not runtime test evidence.
+[Governance](.github/workflows/governance.yml) runs repository hygiene and tooling
+checks on Blacksmith Linux and GitHub-hosted Windows.
+[WFL tests](.github/workflows/wfl-tests.yml) runs the five application suites and the pinned Scribe suite via
+`python3 scripts/run_tests.py --include-scribe` on
+`blacksmith-2vcpu-ubuntu-2404`. Both workflows run for pushes and pull requests to
+`main` and support manual dispatch.
+
+WFL tests pulls `bsbyrdwfl/wfl:nightly` from Docker Hub for every run, resolves
+the image digest, and uses that immutable image for that run's runtime checks.
+Python is installed in the disposable test container and the source checkout is
+mounted read-only. The job summary records the resolved image digest,
+`wfl --version`, and tested Scriptorium and Scribe revisions. The nightly tag is
+moving: retain the run URL and digest with PR evidence so a later nightly does
+not obscure which runtime was tested. The nightly workflow is not a declaration
+that every nightly, platform, or production configuration is supported.
+
+There is no automated HTTP/browser journey suite in this repository. The
+scheduled Scribe updater only proposes dependency changes; its successful run
+alone is not runtime test evidence.
 
 Before merge, required checks MUST pass on the final proposed revision, evidence
 MUST cover the affected behavior and risk, and blocking reviews MUST be resolved.
 Recheck after changes that invalidate prior results. Maintainers configure
 required status checks and review protections on GitHub; repository files alone
 do not activate host settings. Bot PRs follow the same review and test rules;
-approve pending workflow runs or manually dispatch Governance on the proposed
-branch and verify that its revision matches the proposal.
+approve pending workflow runs or manually dispatch both Governance and WFL tests
+on the proposed branch and verify that their revisions match the proposal.
 
 Before a production release, the Maintainer MUST identify the immutable
 Scriptorium and Scribe revisions, runtime version, deployed configuration, and
@@ -222,12 +236,18 @@ measurement and passing criteria before making such a claim.
 
 ## Adoption gaps and follow-through
 
-The Maintainer owns this dated register as of 2026-09-12. Each item requires an
+The Maintainer owns this dated register as of 2026-09-20. Each item requires an
 owned issue before implementation and a link here when that issue exists.
+
+WFL application-test automation is implemented by the WFL tests workflow under
+[issue #13](https://github.com/WebFirstLanguage/Scriptorium/issues/13), owned by
+Brad. [PR #14](https://github.com/WebFirstLanguage/Scriptorium/pull/14) retains
+the Blacksmith runtime evidence, including an intentional assertion failure
+used to verify that failures reach GitHub Actions. Host protection settings
+remain a separate adoption item below.
 
 | Gap | Required next step and trigger |
 |---|---|
-| WFL application suites are manual | Pin and provision a runtime in CI; evaluate before the next behavioral PR. Until then attach exact local results to every affected PR. |
 | No router/HTTP or browser automation | Add real-boundary regression coverage with each affected behavior change; plan coverage of all critical journeys before the next production release. |
 | No declared compatibility matrix or release-candidate workflow | Define supported runtime/platform/configuration tuples and retain candidate results before the next production release. |
 | No coverage measurement, performance budgets, or scheduled extended tests | Establish baselines and risk-based targets before claiming those properties; review at the next profile review. |
