@@ -77,16 +77,17 @@ disposable `/work` copy, and native WFL failure statuses propagate through both
 governance platforms and the complete-suite Docker command. Exact-revision
 remote Green remains required; this source review does not claim it.
 
-## Final acceptance still required
+## Final acceptance record
 
 The independent 2026-09-20 source audit rechecked all eight original runner,
 28 hygiene and three HTTP-port requirements against the replacement WFL files.
 It found no missing conversion case or non-WFL scenario, fixture, assertion or
 driver. The five original WFL application suites are unchanged from baseline
 `4ec5c88d9e4ae27041599ad8293a28130b56fbf2`; Scribe's gitlink and checkout remain
-`93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`. Current discovery is 24 application,
+`93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`. Final discovery is 23 application,
 three tooling, eight integration, five runtime, one example and one Scribe suite:
-42 total while the deliberate CI failure is present, 41 after its removal.
+41 total. The temporary deliberate CI suite raised this to 42 for the isolated
+remote failure proof and has been removed.
 The audit also reviewed owned-process cleanup, descendant timeout markers,
 failure diagnostics and continuation, disposable Scribe copies, real HTTP and
 backup/restore boundaries, migration concurrency/interruption, and the executable
@@ -100,5 +101,11 @@ The complete nightly job still pulls `bsbyrdwfl/wfl:nightly`, resolves its diges
 records runtime and source revisions, and invokes the WFL runner in a writable
 disposable copy of a read-only checkout. Python executes only the hygiene
 checker subject. A source-built local pass does not establish a published
-nightly pass. Remote intentional-failure evidence followed by the clean final
-revision remains required before the PR is described as ready to merge.
+nightly pass. Official-image run
+[35513765769](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35513765769)
+at `58362064` completed with **41 functional passes and only the deliberate
+assertion failure**, exit 1. The exact marker, runtime provenance and cleanup
+were independently verified before removing that file. Both Governance
+platforms passed all 41 tooling assertions and the six focused gates passed.
+`orm-verification.md` records this evidence; the final clean 41-suite revision
+and its exact-head CI result are retained in PR #16's Validation section.

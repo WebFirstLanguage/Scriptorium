@@ -1,8 +1,10 @@
 # ORM verification record
 
-This record separates local candidate verification from the required published
-nightly-image result. The latter is still pending. Passing source-built runtime
-tests does not establish that the published nightly supports this change.
+This record distinguishes local candidates, verified official publication and
+the complete runner's isolated remote failure proof. The final clean-run result,
+exact PR head and GitHub merge checkout are recorded in the Validation section
+of [Scriptorium PR #16](https://github.com/WebFirstLanguage/Scriptorium/pull/16).
+Local candidate passes are not substitutes for that final official-image gate.
 
 ## Runtime prerequisites
 
@@ -28,8 +30,11 @@ and confirmed version 26.9.16. MSI SHA256:
 `73db4e8b9f725b6e1953ba453ca972e659a0388e0d343d4afea3b13fb8cfddec`.
 Extracted executable SHA256:
 `32375058e0111f6c159144a8ffa9bd5b3a3bde81f578eca015149053ea4c6cbb`.
-The complete Scriptorium command can now run against the official runtime;
-the isolated remote deliberate-failure proof and final clean pass remain pending.
+The immutable Linux archive SHA256 is
+`8cd9c852afe069f689fee014c71a9667202be9e92344f139f1605b5b167c3fe6`.
+Both Governance job summaries independently record these platform artifacts,
+version and source. The complete Scriptorium command now runs against this
+official runtime; the isolated remote deliberate-failure proof follows below.
 
 ### Initial publication history
 
@@ -105,14 +110,47 @@ tests. [The independent analysis report](type-analysis-review.md) distinguishes
 reproduced analyzer limitations from intentional unknown-type safety checks.
 This record does not claim a clean static-analysis gate.
 
-## Outstanding remote acceptance
+## Official-image CI acceptance
 
 Commit `b9e7903286495d6665b7cfdbd8916a4dc5abd952` adds a temporary WFL assertion
 with marker `SCRIPTORIUM_INTENTIONAL_CI_FAILURE_PROOF`. On the combined local
 runtime, `scripts/run_tests.wfl --group application` reports 24 suites,
 23 passed, one failed, exit 1; only that deliberate suite fails. The retained
-log is `target/ci-propagation-red-local.log`. Its remote assertion-failure proof
-and removal are still required; the full suite temporarily contains 42 suites.
+log is `target/ci-propagation-red-local.log`. Its required remote assertion-failure
+proof has now completed, and the deliberate test is removed from the final
+source. Normal complete-suite discovery contains 41 suites.
+
+[Blacksmith run 35513765769](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35513765769),
+[job 106086113517](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35513765769/job/106086113517),
+tested PR head `58362064ac9594c0a7e35d66dd968e72220bc285` through merge checkout
+`b3d92ba400ad55a49535e8393c1964bc3338904f` against base
+`4ec5c88d9e4ae27041599ad8293a28130b56fbf2`. It freshly pulled and resolved the
+official 26.9.16 image `sha256:1092a0c557731113f08673c764e0deb9e0b053992b4488974863f0a8d692db91`,
+recorded WFL source `23c1a4577da68d853fa30c49a17773427471eca4` and unchanged
+Scribe `93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`, then executed
+`wfl --execution-timeout 1200 scripts/run_tests.wfl`.
+
+The result was **42 suites: 41 passed, one failed**, with runner and Actions
+exit 1. The sole top-level failure was `TestPrograms/ci-propagation.test.wfl`,
+showing the named marker and the exact deliberate assertion. Every functional
+suite completed successfully, including all eight integrations, tooling,
+runtime probes, executable progression and pinned Scribe. The runner's nested
+negative fixtures are intentional assertions about failure propagation; their
+containing suite passed. Container cleanup passed. Independent log review
+confirmed no additional failure or parent deadline expiry. Suite execution ran
+from 13:32:02.4093265 to 13:36:25.8055402 UTC (about 263 seconds); the separate
+upstream 305-second tests establish the longer-budget boundary.
+
+Both [Governance platforms](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35513765906)
+passed three suites and 41 assertions each (28 hygiene, four migration CLI,
+nine runner), plus static hygiene with 180 paths including the deliberate file.
+All six [runtime/media gates](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35513764169)
+passed 15 assertions and cleanup. Their runtime identities agree with the
+official publication. After removing only the deliberate suite, the required
+clean gate runs the same full command with 41 suites; final-head results and
+provenance are retained in the PR's Validation section.
+
+### Earlier official-image attempts and runtime review
 
 The first full run on the published 26.9.14 image,
 [35507634634](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35507634634),
@@ -154,7 +192,8 @@ exact-head CI checks. It adds an explicit finite
 `--execution-timeout` option for the shared invocation budget. The prepared
 complete-suite command is `wfl --execution-timeout 1200 scripts/run_tests.wfl`.
 It preserves existing per-suite timeouts and child process limits. Official
-26.9.16 now contains this option; final Scriptorium remote Red/Green is pending.
+26.9.16 now contains this option; the isolated official-image Red is recorded
+above and final clean-head acceptance is recorded in the PR.
 Independent technical review found no remaining source or fixture blocker;
 25 fast WFL cases, a real 305-second WFL boundary assertion, 2414 existing Rust
 tests (27 existing ignored), formatting, strict Clippy and 36 documentation checks passed
@@ -214,13 +253,7 @@ assertions; its seven cases passed locally and in the successful final Windows
 integration job. The replacement official publication also passed; no failed
 or canceled job is counted as a pass.
 
-- Push an actual intentionally failing WFL test, observe the new runner and
-  its Blacksmith CI job fail, then remove it and verify a clean run.
-- Inspect all required checks on the final proposed Scriptorium revision.
-- Record the freshly pulled and resolved `bsbyrdwfl/wfl:nightly` image digest,
-  runtime version, Scriptorium checkout revision and unchanged Scribe revision.
-
-The implementation is available in draft
+The implementation and final-revision check record are in
 [Scriptorium PR #16](https://github.com/WebFirstLanguage/Scriptorium/pull/16).
 Its first complete-suite attempt,
 [35504493284](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35504493284),

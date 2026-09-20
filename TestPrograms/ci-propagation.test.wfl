@@ -1,8 +1,0 @@
-// Temporary, deliberate Red test required to verify runner and CI propagation.
-// Remove only after the same assertion failure is observed in remote CI.
-describe "Intentional CI failure propagation proof":
-    test "deliberate WFL assertion failure must fail the runner and CI job":
-        display "SCRIPTORIUM_INTENTIONAL_CI_FAILURE_PROOF"
-        expect "intentional CI proof Red" to equal "clean candidate Green"
-    end test
-end describe

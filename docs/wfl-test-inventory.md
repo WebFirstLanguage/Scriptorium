@@ -231,8 +231,10 @@ late marker survives cleanup. Fixture parser mistakes encountered during
 development are not counted as behavioral Red evidence. Full candidate and
 remote deliberate-failure evidence remain separate final acceptance steps.
 
-Before removing Python versions, check every row above against executable WFL
-scenarios. Then run the complete suite including pinned Scribe, file-backed
-ORM/migrations/recovery and HTTP workflows, run repository hygiene, prove a
-deliberate real WFL assertion failure reaches both runner and GitHub Actions,
-remove the deliberate failure, and verify all final-revision required jobs.
+Independent review checked every row above against executable WFL scenarios
+before removing the Python versions. The complete official-image run at
+`58362064` included pinned Scribe, file-backed ORM/migrations/recovery and HTTP
+workflows: 41 functional suites passed and only the deliberate real WFL assertion
+failed, propagating exit 1 to GitHub Actions. The temporary suite is now removed.
+Repository hygiene and both Governance platforms passed. See
+`orm-verification.md` and PR #16 for the isolated proof and final clean-head CI.

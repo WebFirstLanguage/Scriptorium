@@ -69,7 +69,7 @@ All 16 existing database cases, three authentication cases and six rendering
 cases pass. The final complete gate passed 41/41 suites, including the HTTP
 review cases, legacy upgrade, migration recovery and pinned Scribe, on source
 `3bc7b4f`. [The verification record](orm-verification.md) retains the exact local
-provenance and distinguishes the still-pending official nightly acceptance.
+provenance, verified official publication and the separate remote CI evidence.
 
 ### Retained regression chronology
 

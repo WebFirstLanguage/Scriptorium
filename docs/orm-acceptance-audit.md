@@ -1,10 +1,11 @@
 # ORM acceptance audit
 
-This audit tracks the complete requested deliverable. Local candidate evidence
-does not substitute for the final resolved nightly-image CI run. The final
-candidate passed 41/41 complete suites and repository hygiene; see
-`orm-verification.md`. The ready-to-merge PR, remote failure-propagation proof
-and final revision provenance remain pending.
+This audit maps the requested deliverable to implementation and executable
+evidence. `orm-verification.md` records the verified official runtime and the
+isolated complete-runner CI failure proof. The final clean-head result and exact
+runtime/source provenance are recorded in the Validation section of
+[PR #16](https://github.com/WebFirstLanguage/Scriptorium/pull/16); local candidate
+passes do not substitute for that resolved official-image gate.
 
 | Requirement | Implementation and executable evidence |
 | --- | --- |
@@ -39,10 +40,10 @@ and final revision provenance remain pending.
 | Every test, fixture, helper and driver is WFL | Python runner, two Python tooling suites and Python port suite removed; WFL 8+28 behavior mapping plus strengthened diagnostics and default-discovery cases |
 | Non-test Python checker remains only as a subject | `scripts/check_repo_hygiene.py` is invoked by WFL hygiene assertions and the existing governance utility step |
 | Complete suite includes pinned Scribe | `wfl --execution-timeout 1200 scripts/run_tests.wfl` discovers application, tooling, integration, runtime probes, examples and an isolated copy of pinned Scribe; official nightly 26.9.16 includes the required invocation-budget option |
-| Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; deliberate commit `b9e7903` produces local 23-pass/one-fail exit 1; remote assertion-failure proof and removal remain required |
+| Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; official-image run `35513765769` on `58362064` produced 41 functional passes and only the deliberate WFL assertion failure, exit 1; the temporary suite is removed |
 | Keep Linux/Windows governance and Blacksmith nightly | Updated Governance provisions current nightly assets on both platforms; WFL job freshly resolves/pins Docker digest and records runtime/source revisions |
 | Independent review and repaired findings | `orm-independent-review.md`, `independent-migration-review.md`, `runtime-review.md`, migration safety regressions and HTTP evidence distinguish source review from Maintainer approval; `type-analysis-review.md` records remaining runtime static-analysis diagnostics honestly |
-| Final ready-to-merge five-section PR | Source frozen, complete local pass and hygiene recorded; pending deliberate CI Red/Green, fresh nightly provenance and exact-head remote inspection |
+| Final ready-to-merge five-section PR | PR #16 retains the five required sections, independent reviews, regression evidence and final exact-head checks; its Validation section identifies the final clean-run result, freshly resolved image digest and all source revisions |
 
 The user approved the initial three upstream merges and official nightly
 publication. Those PRs are merged and official nightly 26.9.14 is published.
@@ -51,6 +52,7 @@ upstream change adds an explicit finite invocation budget. Its review and all
 exact-head CI passed, including real 305-second assertions on Linux and Windows.
 The user approved its merge and replacement nightly publication; #741 is merged
 as `3720dd74c82f4a1354aa64cfe66260ec3eccba93`. Official nightly 26.9.16 at
-`23c1a4577da68d853fa30c49a17773427471eca4` has published successfully. The final
-Scriptorium acceptance checks listed in `orm-verification.md` remain pending.
+`23c1a4577da68d853fa30c49a17773427471eca4` has published successfully. The isolated
+Scriptorium Red proof is recorded in `orm-verification.md`; final clean-head
+acceptance is recorded in PR #16.
 Scriptorium merging and production deployment remain outside this deliverable.
