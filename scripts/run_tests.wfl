@@ -17,7 +17,7 @@ repeat while argument_index is less than (length of args):
     store option_name as args[argument_index]
     change argument_index to argument_index plus 1
     check if option_name is equal to "--help":
-        display "Usage: wfl scripts/run_tests.wfl [--wfl PROGRAM] [--timeout SECONDS] [--group all|application|tooling|integration|examples|scribe] [--include-scribe]"
+        display "Usage: wfl scripts/run_tests.wfl [--wfl PROGRAM] [--timeout SECONDS] [--group all|application|tooling|integration|runtime|examples|scribe] [--include-scribe]"
         display "Default: all suites, executable examples, and pinned Scribe; 120 seconds per suite."
         exit program
     otherwise:
@@ -58,8 +58,8 @@ repeat while argument_index is less than (length of args):
     end check
 end repeat
 
-store group_paths as parse_json of "{\"application\":\"TestPrograms\",\"tooling\":\"tests/tooling\",\"integration\":\"tests/integration\",\"examples\":\"examples\"}"
-store group_names as ["application", "tooling", "integration", "examples"]
+store group_paths as parse_json of "{\"application\":\"TestPrograms\",\"tooling\":\"tests/tooling\",\"integration\":\"tests/integration\",\"runtime\":\"tests/runtime\",\"examples\":\"examples\"}"
+store group_names as ["application", "tooling", "integration", "runtime", "examples"]
 check if selected_group is not equal to "all" and selected_group is not equal to "scribe" and (includes of group_names and selected_group) is equal to no:
     call runner_error with ("unknown test group: " with selected_group)
 end check

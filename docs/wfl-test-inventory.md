@@ -41,7 +41,7 @@ fail before running tests. Setup/cleanup failures exit 2; interruption exits
 
 `scripts/run_tests.wfl` now discovers every maintained group by default,
 including pinned Scribe. Focused commands use `--group application`, `tooling`,
-`integration`, `examples`, or `scribe`; `--include-scribe` remains compatible
+`integration`, `runtime`, `examples`, or `scribe`; `--include-scribe` remains compatible
 when adding Scribe to a focused run. The same-runtime default uses
 `current_executable`; native launch resolves a bare `--wfl` name, then the runner
 passes that exact resolved runtime to every suite as `args[0]`. Suite failures
@@ -56,7 +56,7 @@ numbers up to one year; spell `.5` and `+1` as `0.5` and `1`.
 
 The first eight tests in `tests/tooling/runner.test.wfl` implement the eight
 requirements below in the same order. The ninth verifies the complete default
-discovers all four maintained groups plus Scribe and excludes helper files.
+discovers all maintained groups plus Scribe and excludes helper files.
 They passed 9/9 on Windows with process runtime commit `a32c74f1`.
 Direct argument lists avoid shell quoting; no fake Python interpreter remains
 in the replacement fixtures.

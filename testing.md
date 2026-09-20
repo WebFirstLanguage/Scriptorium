@@ -87,8 +87,8 @@ test output in the approved locations in
 ## Executable checks
 
 The complete portable entry point recursively discovers regular `*.test.wfl`
-files under `TestPrograms/`, `tests/tooling/`, `tests/integration/`, and
-`examples/`, sorts each group, then runs the pinned Scribe suite:
+files under `TestPrograms/`, `tests/tooling/`, `tests/integration/`,
+`tests/runtime/`, and `examples/`, sorts each group, then runs the pinned Scribe suite:
 
 ```sh
 wfl scripts/run_tests.wfl
@@ -96,6 +96,7 @@ wfl scripts/run_tests.wfl --group application
 wfl scripts/run_tests.wfl --group tooling
 wfl scripts/run_tests.wfl --group integration
 wfl scripts/run_tests.wfl --group examples
+wfl scripts/run_tests.wfl --group runtime
 wfl scripts/run_tests.wfl --group scribe
 ```
 

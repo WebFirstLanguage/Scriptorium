@@ -95,6 +95,7 @@ describe "Complete WFL runner regressions":
         store outcome as invoke_runner of fixture_root and ["--group", "application", "--timeout", "2"]
         expect outcome["exit_code"] to equal 1
         expect (to_lowercase of outcome["output"]) to contain "timeout"
+        expect outcome["output"] to contain "diagnostic before runner timeout"
         expect outcome["output"] to contain "2 suites: 1 passed, 1 failed"
         expect (is_file of (path_join of fixture_root and "descendant-ready.txt")) to equal yes
         wait for 3500 milliseconds
@@ -162,7 +163,7 @@ describe "Complete WFL runner regressions":
 
     test "default command discovers every maintained group and excludes helpers":
         store fixture_root as call runner_fixture
-        for each group_path in ["TestPrograms", "tests/tooling", "tests/integration", "examples"]:
+        for each group_path in ["TestPrograms", "tests/tooling", "tests/integration", "tests/runtime", "examples"]:
             call fixture_suite with fixture_root and (group_path with "/nested/example.test.wfl") and "runner-pass.wfl"
             call test_write_text with (path_join of fixture_root and group_path and "helper.wfl") and "must never execute"
         end for
@@ -170,7 +171,7 @@ describe "Complete WFL runner regressions":
         call fixture_suite with fixture_root and "lib/scribe/tests/scribe.test.wfl" and "runner-pass.wfl"
         store outcome as invoke_runner of fixture_root and []
         expect outcome["exit_code"] to equal 0
-        expect outcome["output"] to contain "5 suites: 5 passed, 0 failed"
-        expect (length of (runner_observations of outcome["output"])) to equal 5
+        expect outcome["output"] to contain "6 suites: 6 passed, 0 failed"
+        expect (length of (runner_observations of outcome["output"])) to equal 6
     end test
 end describe

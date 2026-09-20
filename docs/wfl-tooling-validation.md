@@ -11,7 +11,7 @@ Python hygiene utility is only an implementation subject invoked by WFL.
 
 | Suite | Result | Meaning |
 |---|---|---|
-| `tests/tooling/runner.test.wfl` | 9/9 | Eight original requirements plus complete default discovery of application, tooling, HTTP, examples and Scribe |
+| `tests/tooling/runner.test.wfl` | 9/9 | Eight original requirements plus complete default discovery of maintained suite groups and Scribe |
 | `tests/tooling/hygiene.test.wfl` | 28/28 | Every inventory row, including binary source assets, all SQLite sidecars, synthetic Git indexes/gitlinks, ignored files, links and fail-closed setup errors |
 
 The process-only source-built runtime at upstream `a32c74f1` passed first; the
@@ -35,6 +35,17 @@ Independent root-agent source review accepted the runner/helper and the
 suites. Review is technical; Maintainer acceptance remains separate.
 
 ## Changes to the command contract
+
+A second independent review found one missing edge: output printed before a
+timeout was discarded by native process completion. Strengthening the WFL
+timeout case produced **8/9, exit 1**, specifically because the recognizable
+pre-timeout diagnostic was absent; later suites still ran. The corresponding
+upstream WFL test-first commit `012e7c89` also failed its intended assertion.
+The runtime remedy drains both bounded streams after termination and includes
+their contents in the same typed timeout error, with a separate one-second
+drain limit. The strengthened Scriptorium runner suite then returned **9/9**.
+Independent source review accepted that remedy; it still needs the final
+combined runtime and remote acceptance checks below.
 
 The complete command includes all groups and pinned Scribe by default. Use
 `--group` for an explicitly focused run. The default executable is the exact
