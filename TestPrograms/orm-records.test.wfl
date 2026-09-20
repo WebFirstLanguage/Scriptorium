@@ -1,0 +1,106 @@
+include from "../lib/orm/records.wfl"
+
+create new OrmField as key_spec:
+    field_name is "id"
+    value_type is "identity"
+    primary_key is yes
+    generated is yes
+end
+create new OrmField as name_spec:
+    field_name is "name"
+end
+create new OrmField as note_spec:
+    field_name is "note"
+    nullable is yes
+end
+create new OrmField as role_spec:
+    field_name is "role"
+    has_default is yes
+    default_value is "author"
+end
+create new OrmField as secret_spec:
+    field_name is "password_hash"
+    sensitive is yes
+end
+create new OrmModel as accounts:
+    table_name is "accounts"
+    fields is [key_spec and name_spec and note_spec and role_spec and secret_spec]
+end
+
+describe "ORM records and safe assignment":
+    test "missing, null and empty text have distinct behavior":
+        store account as orm_record of accounts
+        expect orm_has of account and "note" to be no
+        store problem_text as ""
+        try:
+            store absent as orm_get of account and "note"
+        when error:
+            change problem_text to error_message
+        end try
+        expect problem_text contains "field is missing" to be yes
+        call orm_set with account and "note" and nothing
+        expect orm_has of account and "note" to be yes
+        expect orm_get of account and "note" to equal nothing
+        call orm_set with account and "note" and ""
+        expect orm_get of account and "note" to equal ""
+        expect orm_has of account and "role" to be no
+    end test
+
+    test "unknown and sensitive batch fields reject the entire batch":
+        store account as orm_record of accounts
+        store problem_text as ""
+        try:
+            call orm_assign with account and [(orm_value of "name" and "Ada") and (orm_value of "password_hash" and "confidential")]
+        when error:
+            change problem_text to error_message
+        end try
+        expect problem_text contains "sensitive fields" to be yes
+        expect problem_text contains "confidential" to be no
+        expect orm_has of account and "name" to be no
+        change problem_text to ""
+        try:
+            call orm_set with account and "admin_typo" and yes
+        when error:
+            change problem_text to error_message
+        end try
+        expect problem_text contains "unknown field" to be yes
+    end test
+
+    test "explicit sensitive assignment and defaults preserve declared intent":
+        store account as orm_record of accounts
+        call orm_set with account and "name" and "Ada"
+        call orm_set_sensitive with account and "password_hash" and "synthetic-hash"
+        expect orm_get of account and "password_hash" to equal "synthetic-hash"
+        expect orm_record_problem of account and yes to equal ""
+        expect orm_has of account and "role" to be no
+        expect orm_has of account and "id" to be no
+    end test
+
+    test "record assignments are isolated and do not silently coerce types":
+        store first_account as orm_record of accounts
+        store second_account as orm_record of accounts
+        call orm_set with first_account and "name" and "Ada"
+        expect orm_has of second_account and "name" to be no
+        store problem_text as ""
+        try:
+            call orm_set with first_account and "name" and 123
+        when error:
+            change problem_text to error_message
+        end try
+        expect problem_text contains "expected text" to be yes
+        expect orm_get of first_account and "name" to equal "Ada"
+    end test
+
+    test "required omissions and duplicate assignments are actionable":
+        store account as orm_record of accounts
+        expect orm_record_problem of account and yes to equal "missing required field name; supply it before saving"
+        store problem_text as ""
+        try:
+            call orm_assign with account and [(orm_value of "name" and "Ada") and (orm_value of "name" and "Grace")]
+        when error:
+            change problem_text to error_message
+        end try
+        expect problem_text contains "cannot repeat a field" to be yes
+        expect orm_has of account and "name" to be no
+    end test
+end describe

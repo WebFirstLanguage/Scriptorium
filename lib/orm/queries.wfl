@@ -1,0 +1,210 @@
+include from "predicates.wfl"
+
+create container OrmOrder:
+    property field_name: Text defaults ""
+    property direction: Text defaults "ascending"
+end
+
+create container OrmQuery:
+    property model_spec: OrmModel
+    property predicate defaults nothing
+    property ordering: List defaults []
+    property selected_fields: List defaults []
+    property page_limit: Number defaults 100
+    property page_offset: Number defaults 0
+    property whole_table: Boolean defaults no
+
+    action set_predicate needs new_predicate: OrmPredicate:
+        change predicate to new_predicate
+    end
+    action set_ordering needs new_ordering: List:
+        change ordering to new_ordering
+    end
+    action set_projection needs new_projection: List:
+        change selected_fields to new_projection
+    end
+    action set_page needs new_limit: Number, new_offset: Number:
+        change page_limit to new_limit
+        change page_offset to new_offset
+    end
+    action allow_whole_table:
+        change whole_table to yes
+    end
+end
+
+define action called orm_query with parameters model_spec:
+    store valid as orm_require_model of model_spec
+    create new OrmQuery as requested:
+        model_spec is model_spec
+        ordering is []
+        selected_fields is []
+    end
+    return requested
+end action
+
+define action called orm_where with parameters requested and predicate:
+    // Compile before changing a query so a rejected predicate is atomic.
+    store valid as orm_compile_predicate of requested.model_spec and predicate
+    requested.set_predicate(predicate)
+    return requested
+end action
+
+define action called orm_order_by with parameters requested and field_name and direction:
+    store field_spec as orm_require_field of requested.model_spec and field_name
+    check if direction is not equal to "ascending" and direction is not equal to "descending":
+        call orm_fail with "order" and "direction must be ascending or descending"
+    end check
+    create new OrmOrder as order_spec:
+        field_name is field_name
+        direction is direction
+    end
+    store revised_ordering as []
+    for each existing_order in requested.ordering:
+        check if existing_order.field_name is equal to field_name:
+            call orm_fail with "order" and "a field cannot appear twice in the ordering"
+        end check
+        push with revised_ordering and existing_order
+    end for
+    push with revised_ordering and order_spec
+    requested.set_ordering(revised_ordering)
+    return requested
+end action
+
+define action called orm_select with parameters requested and field_names:
+    store seen_fields as []
+    for each field_name in field_names:
+        store declared as orm_require_field of requested.model_spec and field_name
+        check if contains of seen_fields and field_name:
+            call orm_fail with "projection" and "a field cannot appear twice in the projection"
+        end check
+        push with seen_fields and field_name
+    end for
+    requested.set_projection(seen_fields)
+    return requested
+end action
+
+define action called orm_page with parameters requested and page_limit and page_offset:
+    check if (typeof of page_limit) is not equal to "Number" or (typeof of page_offset) is not equal to "Number":
+        call orm_fail with "page" and "limit and offset must be whole numbers"
+    end check
+    check if page_limit is less than 1 or page_limit is greater than 1000 or (floor of page_limit) is not equal to page_limit:
+        call orm_fail with "page" and "limit must be a whole number from 1 to 1000"
+    end check
+    check if page_offset is less than 0 or page_offset is greater than 9007199254740991 or (floor of page_offset) is not equal to page_offset:
+        call orm_fail with "page" and "offset must be a nonnegative whole number in the exact numeric range"
+    end check
+    requested.set_page(page_limit, page_offset)
+    return requested
+end action
+
+// Deliberate whole-table maintenance is explicit at the call site.
+define action called orm_whole_table with parameters requested:
+    requested.allow_whole_table()
+    return requested
+end action
+
+define action called orm_projection_sql with parameters model_spec and field_names:
+    store projected as []
+    for each field_spec in model_spec.fields:
+        check if (length of field_names) is equal to 0 or (contains of field_names and field_spec.field_name):
+            store quoted_name as orm_quote of field_spec.field_name
+            store projected_sql as quoted_name
+            check if field_spec.value_type is equal to "identity":
+                change projected_sql to "CAST(" with quoted_name with " AS TEXT) AS " with quoted_name
+            end check
+            push with projected and projected_sql
+        end check
+    end for
+    return join of projected and ", "
+end action
+
+define action called orm_compile_select with parameters requested and result_kind:
+    store valid as orm_require_model of requested.model_spec
+    store page_valid as orm_page of requested and requested.page_limit and requested.page_offset
+    store projection_valid as orm_select of requested and requested.selected_fields
+    store filter_sql as orm_compile_predicate of requested.model_spec and requested.predicate
+    store projection_sql as orm_projection_sql of requested.model_spec and requested.selected_fields
+    check if result_kind is equal to "count":
+        change projection_sql to "COUNT(*) AS orm_total"
+    otherwise:
+        check if result_kind is equal to "exists":
+            change projection_sql to "1 AS orm_exists"
+        otherwise:
+            check if result_kind is not equal to "records":
+                call orm_fail with "query" and "unknown result kind"
+            end check
+        end check
+    end check
+    store sql_text as "SELECT " with projection_sql with " FROM " with (orm_quote of requested.model_spec.table_name) with " WHERE " with filter_sql.sql_text
+    store bound_values as []
+    for each bound_value in filter_sql.bound_values:
+        push with bound_values and bound_value
+    end for
+    check if result_kind is equal to "records":
+        store ordering_parts as []
+        store ordered_fields as []
+        for each order_spec in requested.ordering:
+            store field_spec as orm_require_field of requested.model_spec and order_spec.field_name
+            check if order_spec.direction is not equal to "ascending" and order_spec.direction is not equal to "descending":
+                call orm_fail with "order" and "direction must be ascending or descending"
+            end check
+            check if contains of ordered_fields and order_spec.field_name:
+                call orm_fail with "order" and "a field cannot appear twice in the ordering"
+            end check
+            push with ordered_fields and order_spec.field_name
+            store suffix as " ASC"
+            check if order_spec.direction is equal to "descending":
+                change suffix to " DESC"
+            end check
+            push with ordering_parts and ((orm_quote of order_spec.field_name) with suffix)
+        end for
+        store key_spec as orm_primary_field of requested.model_spec
+        check if (contains of ordered_fields and key_spec.field_name) is equal to no:
+            push with ordering_parts and ((orm_quote of key_spec.field_name) with " ASC")
+        end check
+        change sql_text to sql_text with " ORDER BY " with (join of ordering_parts and ", ") with " LIMIT ? OFFSET ?"
+        push with bound_values and requested.page_limit
+        push with bound_values and requested.page_offset
+    end check
+    check if result_kind is equal to "exists":
+        change sql_text to sql_text with " LIMIT 1"
+    end check
+    return orm_sql of sql_text and bound_values and filter_sql.constant_kind
+end action
+
+define action called orm_map_row with parameters model_spec and native_row:
+    store assignments as []
+    for each field_spec in model_spec.fields:
+        check if native_row contains field_spec.field_name:
+            store field_value as native_row[field_spec.field_name]
+            check if field_spec.value_type is equal to "boolean" and (isnothing of field_value) is equal to no:
+                check if field_value is equal to 1:
+                    change field_value to yes
+                otherwise:
+                    check if field_value is equal to 0:
+                        change field_value to no
+                    end check
+                end check
+            end check
+            store problem_text as orm_value_problem of field_spec and field_value
+            check if problem_text is not equal to "":
+                call orm_fail with "map stored row" and ("field " with field_spec.field_name with ": " with problem_text with "; inspect the schema and repair invalid stored data")
+            end check
+            push with assignments and (orm_value of field_spec.field_name and field_value)
+        end check
+    end for
+    store key_spec as orm_primary_field of model_spec
+    store identity_value as nothing
+    check if native_row contains key_spec.field_name:
+        change identity_value to native_row[key_spec.field_name]
+    end check
+    create new OrmRecord as mapped:
+        model_spec is model_spec
+        assigned_values is assignments
+        loaded_relations is []
+        persisted is yes
+        original_key is identity_value
+        source_row is native_row
+    end
+    return mapped
+end action

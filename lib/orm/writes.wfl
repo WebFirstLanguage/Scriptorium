@@ -1,0 +1,151 @@
+include from "connections.wfl"
+
+define action called orm_insert_mode with parameters session and record_value and conflict_mode and conflict_field:
+    store record_problem as orm_record_problem of record_value and yes
+    check if record_problem is not equal to "":
+        call orm_fail with "insert" and record_problem
+    end check
+    store model_spec as record_value.model_spec
+    store field_parts as []
+    store placeholders as []
+    store bound_values as []
+    store updated_parts as []
+    for each assignment in record_value.assigned_values:
+        store field_spec as orm_require_field of model_spec and assignment.field_name
+        store quoted_name as orm_quote of field_spec.field_name
+        push with field_parts and quoted_name
+        push with placeholders and "?"
+        push with bound_values and assignment.field_value
+        check if field_spec.primary_key is equal to no and field_spec.field_name is not equal to conflict_field:
+            push with updated_parts and (quoted_name with " = excluded." with quoted_name)
+        end check
+    end for
+    store sql_text as "INSERT INTO " with (orm_quote of model_spec.table_name)
+    check if (length of field_parts) is equal to 0:
+        change sql_text to sql_text with " DEFAULT VALUES"
+    otherwise:
+        change sql_text to sql_text with " (" with (join of field_parts and ", ") with ") VALUES (" with (join of placeholders and ", ") with ")"
+    end check
+    check if conflict_mode is not equal to "error":
+        store conflict_spec as orm_require_field of model_spec and conflict_field
+        check if conflict_spec.primary_key is equal to no and conflict_spec.unique_value is equal to no:
+            call orm_fail with "insert conflict" and "the conflict field must be a primary or unique field"
+        end check
+        check if (orm_has of record_value and conflict_field) is equal to no:
+            call orm_fail with "insert conflict" and "assign the conflict field explicitly"
+        end check
+        change sql_text to sql_text with " ON CONFLICT (" with (orm_quote of conflict_field) with ")"
+        check if conflict_mode is equal to "ignore":
+            change sql_text to sql_text with " DO NOTHING"
+        otherwise:
+            check if conflict_mode is not equal to "update" or (length of updated_parts) is equal to 0:
+                call orm_fail with "insert conflict" and "an upsert requires at least one assigned non-key field to update"
+            end check
+            change sql_text to sql_text with " DO UPDATE SET " with (join of updated_parts and ", ")
+        end check
+    end check
+    change sql_text to sql_text with " RETURNING " with (orm_projection_sql of model_spec and [])
+    store native_rows as orm_read_sql of session and (orm_sql of sql_text and bound_values and "unknown")
+    check if (length of native_rows) is equal to 0:
+        return nothing
+    end check
+    return orm_map_row of model_spec and native_rows[0]
+end action
+
+define action called orm_insert with parameters session and record_value:
+    return orm_insert_mode of session and record_value and "error" and ""
+end action
+
+define action called orm_insert_if_absent with parameters session and record_value and conflict_field:
+    return orm_insert_mode of session and record_value and "ignore" and conflict_field
+end action
+
+define action called orm_upsert with parameters session and record_value and conflict_field:
+    return orm_insert_mode of session and record_value and "update" and conflict_field
+end action
+
+define action called orm_save with parameters session and record_value:
+    check if record_value.persisted is equal to no:
+        return orm_insert of session and record_value
+    end check
+    store record_problem as orm_record_problem of record_value and no
+    check if record_problem is not equal to "":
+        call orm_fail with "save" and record_problem
+    end check
+    store model_spec as record_value.model_spec
+    store key_spec as orm_primary_field of model_spec
+    check if (isnothing of record_value.original_key) or (orm_has of record_value and key_spec.field_name) is equal to no:
+        call orm_fail with "save" and "a persisted record needs a non-null projected primary key; reload the complete record"
+    end check
+    check if (orm_get of record_value and key_spec.field_name) is not equal to record_value.original_key:
+        call orm_fail with "save" and "changing a persisted primary key is not supported; use an explicit data migration"
+    end check
+    store assignments_sql as []
+    store bound_values as []
+    for each assignment in record_value.assigned_values:
+        check if assignment.field_name is not equal to key_spec.field_name:
+            push with assignments_sql and ((orm_quote of assignment.field_name) with " = ?")
+            push with bound_values and assignment.field_value
+        end check
+    end for
+    check if (length of assignments_sql) is equal to 0:
+        call orm_fail with "save" and "there are no assigned non-key fields; assign a field or reload the complete record"
+    end check
+    push with bound_values and record_value.original_key
+    store sql_text as "UPDATE " with (orm_quote of model_spec.table_name) with " SET " with (join of assignments_sql and ", ") with " WHERE " with (orm_quote of key_spec.field_name) with " = ? RETURNING " with (orm_projection_sql of model_spec and [])
+    store native_rows as orm_read_sql of session and (orm_sql of sql_text and bound_values and "unknown")
+    check if (length of native_rows) is equal to 0:
+        call orm_fail with "save" and "the persisted record no longer exists; reload it before deciding whether to create a replacement"
+    end check
+    return orm_map_row of model_spec and native_rows[0]
+end action
+
+// Bulk mutation honors the same page/order as a read query. A predicate or an
+// explicit whole-table intent is still required even though each page is bounded.
+define action called orm_write_selection with parameters requested:
+    store filter_sql as orm_compile_predicate of requested.model_spec and requested.predicate
+    check if filter_sql.constant_kind is equal to "true" and requested.whole_table is equal to no:
+        call orm_fail with "bulk write" and "an unrestricted write needs explicit orm_whole_table intent"
+    end check
+    store key_spec as orm_primary_field of requested.model_spec
+    create new OrmQuery as selection:
+        model_spec is requested.model_spec
+        predicate is requested.predicate
+        ordering is requested.ordering
+        selected_fields is [key_spec.field_name]
+        page_limit is requested.page_limit
+        page_offset is requested.page_offset
+    end
+    store selected_sql as orm_compile_select of selection and "records"
+    return orm_sql of ((orm_quote of key_spec.field_name) with " IN (" with selected_sql.sql_text with ")") and selected_sql.bound_values and filter_sql.constant_kind
+end action
+
+define action called orm_update with parameters session and requested and assignments:
+    store draft as orm_record of requested.model_spec
+    call orm_assign with draft and assignments
+    store key_spec as orm_primary_field of requested.model_spec
+    store assignment_parts as []
+    store bound_values as []
+    for each assignment in draft.assigned_values:
+        check if assignment.field_name is equal to key_spec.field_name:
+            call orm_fail with "bulk update" and "changing primary keys requires an explicit data migration"
+        end check
+        push with assignment_parts and ((orm_quote of assignment.field_name) with " = ?")
+        push with bound_values and assignment.field_value
+    end for
+    check if (length of assignment_parts) is equal to 0:
+        call orm_fail with "bulk update" and "assign at least one field"
+    end check
+    store selection_sql as orm_write_selection of requested
+    for each bound_value in selection_sql.bound_values:
+        push with bound_values and bound_value
+    end for
+    store sql_text as "UPDATE " with (orm_quote of requested.model_spec.table_name) with " SET " with (join of assignment_parts and ", ") with " WHERE " with selection_sql.sql_text
+    return orm_write_sql of session and (orm_sql of sql_text and bound_values and selection_sql.constant_kind)
+end action
+
+define action called orm_delete with parameters session and requested:
+    store selection_sql as orm_write_selection of requested
+    store sql_text as "DELETE FROM " with (orm_quote of requested.model_spec.table_name) with " WHERE " with selection_sql.sql_text
+    return orm_write_sql of session and (orm_sql of sql_text and selection_sql.bound_values and selection_sql.constant_kind)
+end action

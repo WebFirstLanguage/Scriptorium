@@ -1,0 +1,225 @@
+include from "records.wfl"
+
+create container OrmPredicate:
+    property predicate_kind: Text defaults "comparison"
+    property field_name: Text defaults ""
+    property comparison: Text defaults "equal"
+    property compared_value defaults nothing
+    property children: List defaults []
+end
+
+create container OrmSql:
+    property sql_text: Text defaults ""
+    property bound_values: List defaults []
+    // true/false identify structural constants; unknown depends on stored rows.
+    property constant_kind: Text defaults "unknown"
+end
+
+define action called orm_compare with parameters field_name and comparison and compared_value:
+    create new OrmPredicate as predicate:
+        field_name is field_name
+        comparison is comparison
+        compared_value is compared_value
+    end
+    return predicate
+end action
+
+define action called orm_all with parameters predicates:
+    create new OrmPredicate as predicate:
+        predicate_kind is "all"
+        children is predicates
+    end
+    return predicate
+end action
+
+define action called orm_any with parameters predicates:
+    create new OrmPredicate as predicate:
+        predicate_kind is "any"
+        children is predicates
+    end
+    return predicate
+end action
+
+define action called orm_not with parameters predicate:
+    create new OrmPredicate as negation:
+        predicate_kind is "not"
+        children is [predicate]
+    end
+    return negation
+end action
+
+define action called orm_quote with parameters identifier:
+    store problem_text as orm_identifier_problem of identifier
+    check if problem_text is not equal to "":
+        call orm_fail with "identifier" and problem_text
+    end check
+    return "\"" with identifier with "\""
+end action
+
+define action called orm_sql with parameters sql_text and bound_values and constant_kind:
+    create new OrmSql as compiled:
+        sql_text is sql_text
+        bound_values is bound_values
+        constant_kind is constant_kind
+    end
+    return compiled
+end action
+
+define action called orm_compile_predicate with parameters model_spec and predicate:
+    check if predicate is nothing:
+        return orm_sql of "1" and [] and "true"
+    end check
+    check if predicate.predicate_kind is equal to "all" or predicate.predicate_kind is equal to "any":
+        store parts as []
+        store bound_values as []
+        store glue as " AND "
+        store constant_kind as "true"
+        store decisive as "false"
+        check if predicate.predicate_kind is equal to "any":
+            change glue to " OR "
+            change constant_kind to "false"
+            change decisive to "true"
+        end check
+        store has_unknown as no
+        store has_decisive as no
+        for each child_predicate in predicate.children:
+            store child_sql as orm_compile_predicate of model_spec and child_predicate
+            push with parts and child_sql.sql_text
+            for each bound_value in child_sql.bound_values:
+                push with bound_values and bound_value
+            end for
+            check if child_sql.constant_kind is equal to "unknown":
+                change has_unknown to yes
+            end check
+            check if child_sql.constant_kind is equal to decisive:
+                change has_decisive to yes
+            end check
+        end for
+        check if has_unknown:
+            change constant_kind to "unknown"
+        end check
+        check if has_decisive:
+            change constant_kind to decisive
+        end check
+        check if (length of parts) is equal to 0:
+            check if constant_kind is equal to "true":
+                return orm_sql of "1" and [] and "true"
+            end check
+            return orm_sql of "0" and [] and "false"
+        end check
+        return orm_sql of ("(" with (join of parts and glue) with ")") and bound_values and constant_kind
+    end check
+    check if predicate.predicate_kind is equal to "not":
+        check if (length of predicate.children) is not equal to 1:
+            call orm_fail with "filter" and "a negation requires exactly one predicate"
+        end check
+        store child_sql as orm_compile_predicate of model_spec and predicate.children[0]
+        store constant_kind as "unknown"
+        check if child_sql.constant_kind is equal to "true":
+            change constant_kind to "false"
+        end check
+        check if child_sql.constant_kind is equal to "false":
+            change constant_kind to "true"
+        end check
+        return orm_sql of ("(NOT " with child_sql.sql_text with ")") and child_sql.bound_values and constant_kind
+    end check
+    check if predicate.predicate_kind is not equal to "comparison":
+        call orm_fail with "filter" and "use a comparison, all, any, or not predicate"
+    end check
+    store field_spec as orm_require_field of model_spec and predicate.field_name
+    store column_sql as orm_quote of field_spec.field_name
+    store comparison as predicate.comparison
+    store compared_value as predicate.compared_value
+    check if comparison is equal to "in":
+        check if (typeof of compared_value) is not equal to "List":
+            call orm_fail with "filter" and "in requires a list of values"
+        end check
+        check if (length of compared_value) is greater than 500:
+            call orm_fail with "filter" and "in accepts at most 500 values; split larger work into bounded batches"
+        end check
+        store placeholders as []
+        store bound_values as []
+        store has_null as no
+        for each candidate_value in compared_value:
+            check if isnothing of candidate_value:
+                change has_null to yes
+            otherwise:
+                store value_problem as orm_value_problem of field_spec and candidate_value
+                check if value_problem is not equal to "":
+                    call orm_fail with "filter" and value_problem
+                end check
+                push with placeholders and "?"
+                push with bound_values and candidate_value
+            end check
+        end for
+        store sql_text as "0"
+        store constant_kind as "false"
+        check if (length of placeholders) is greater than 0:
+            change sql_text to column_sql with " IN (" with (join of placeholders and ", ") with ")"
+            change constant_kind to "unknown"
+        end check
+        check if has_null:
+            change sql_text to "(" with sql_text with " OR " with column_sql with " IS NULL)"
+            change constant_kind to "unknown"
+        end check
+        return orm_sql of sql_text and bound_values and constant_kind
+    end check
+    check if comparison is equal to "is null" or comparison is equal to "is not null":
+        check if (isnothing of compared_value) is equal to no:
+            call orm_fail with "filter" and "is null and is not null take nothing as their comparison value"
+        end check
+        check if comparison is equal to "is null":
+            return orm_sql of (column_sql with " IS NULL") and [] and "unknown"
+        end check
+        return orm_sql of (column_sql with " IS NOT NULL") and [] and "unknown"
+    end check
+    check if isnothing of compared_value:
+        check if comparison is equal to "equal":
+            return orm_sql of (column_sql with " IS NULL") and [] and "unknown"
+        end check
+        check if comparison is equal to "not equal":
+            return orm_sql of (column_sql with " IS NOT NULL") and [] and "unknown"
+        end check
+        call orm_fail with "filter" and "null supports only equality, inequality, membership, or explicit null predicates"
+    end check
+    store value_problem as orm_value_problem of field_spec and compared_value
+    check if value_problem is not equal to "":
+        call orm_fail with "filter" and value_problem
+    end check
+    store operator_sql as ""
+    check if comparison is equal to "equal":
+        change operator_sql to " = "
+    end check
+    check if comparison is equal to "not equal":
+        change operator_sql to " <> "
+    end check
+    check if comparison is equal to "less than":
+        change operator_sql to " < "
+    end check
+    check if comparison is equal to "less or equal":
+        change operator_sql to " <= "
+    end check
+    check if comparison is equal to "greater than":
+        change operator_sql to " > "
+    end check
+    check if comparison is equal to "greater or equal":
+        change operator_sql to " >= "
+    end check
+    check if operator_sql is not equal to "":
+        return orm_sql of (column_sql with operator_sql with "?") and [compared_value] and "unknown"
+    end check
+    check if comparison is equal to "contains" or comparison is equal to "starts with":
+        check if field_spec.value_type is not equal to "text":
+            call orm_fail with "filter" and "contains and starts with require a text field"
+        end check
+        store pattern_text as replace "\\" with "\\\\" in compared_value
+        change pattern_text to replace "%" with "\\%" in pattern_text
+        change pattern_text to replace "_" with "\\_" in pattern_text
+        change pattern_text to pattern_text with "%"
+        check if comparison is equal to "contains":
+            change pattern_text to "%" with pattern_text
+        end check
+        return orm_sql of (column_sql with " LIKE ? ESCAPE '\\'") and [pattern_text] and "unknown"
+    end check
+    call orm_fail with "filter" and "unsupported comparison; use the documented comparison names"
+end action

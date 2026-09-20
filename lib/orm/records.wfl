@@ -1,0 +1,181 @@
+include from "models.wfl"
+
+// Only validated identifiers appear in diagnostics, never assigned values.
+define action called orm_fail with parameters operation and guidance:
+    call raise_error with ("ORM " with operation with ": " with guidance)
+end action
+
+define action called orm_require_model with parameters model_spec:
+    store model_problem as orm_model_problem of model_spec
+    check if model_problem is not equal to "":
+        call orm_fail with "model" and model_problem
+    end check
+    return yes
+end action
+
+define action called orm_require_field with parameters model_spec and field_name:
+    store field_spec as orm_field_named of model_spec and field_name
+    check if field_spec is nothing:
+        call orm_fail with "field" and "unknown field; use a field declared by this model"
+    end check
+    return field_spec
+end action
+
+create container OrmAssignment:
+    property field_name: Text defaults ""
+    property field_value defaults nothing
+end
+
+// Assignment lists are explicit data, so every key can be checked before any
+// change. No input map is silently filtered to a list of known fields.
+define action called orm_value with parameters field_name and field_value:
+    create new OrmAssignment as assignment:
+        field_name is field_name
+        field_value is field_value
+    end
+    return assignment
+end action
+
+create container OrmRecord:
+    property model_spec: OrmModel
+    property assigned_values: List defaults []
+    property loaded_relations: List defaults []
+    property persisted: Boolean defaults no
+    property original_key defaults nothing
+    // Read-only native projection for application compatibility adapters.
+    property source_row defaults nothing
+
+    action replace_values needs replacement: List:
+        change assigned_values to replacement
+    end
+
+    action mark_persisted needs identity_value: OrmAssignment:
+        change original_key to identity_value.field_value
+        change persisted to yes
+    end
+
+    action replace_relations needs replacement: List:
+        change loaded_relations to replacement
+    end
+end
+
+define action called orm_record with parameters model_spec:
+    store valid as orm_require_model of model_spec
+    create new OrmRecord as fresh_record:
+        model_spec is model_spec
+        assigned_values is []
+        loaded_relations is []
+    end
+    return fresh_record
+end action
+
+define action called orm_has with parameters record_value and field_name:
+    store declared as orm_require_field of record_value.model_spec and field_name
+    for each assignment in record_value.assigned_values:
+        check if assignment.field_name is equal to field_name:
+            return yes
+        end check
+    end for
+    return no
+end action
+
+define action called orm_get with parameters record_value and field_name:
+    store declared as orm_require_field of record_value.model_spec and field_name
+    for each assignment in record_value.assigned_values:
+        check if assignment.field_name is equal to field_name:
+            return assignment.field_value
+        end check
+    end for
+    call orm_fail with "read" and "field is missing; assign it or include it in the query projection (use orm_has to check presence)"
+end action
+
+define action called orm_assignment_problem with parameters model_spec and assignment and trusted_sensitive:
+    store field_spec as orm_field_named of model_spec and assignment.field_name
+    check if field_spec is nothing:
+        return "unknown field; use only declared fields"
+    end check
+    check if field_spec.sensitive and trusted_sensitive is equal to no:
+        return "sensitive fields require explicit orm_set_sensitive; do not assign untrusted form or JSON values to them"
+    end check
+    store value_problem as orm_value_problem of field_spec and assignment.field_value
+    check if value_problem is not equal to "":
+        return "field " with field_spec.field_name with ": " with value_problem
+    end check
+    return ""
+end action
+
+// Internal update is copy-on-write; both ordinary and explicit sensitive setters
+// use it. The caller validates the entire batch before invoking it.
+define action called orm_replace_assignment with parameters record_value and replacement:
+    store revised_values as []
+    for each assignment in record_value.assigned_values:
+        check if assignment.field_name is not equal to replacement.field_name:
+            push with revised_values and assignment
+        end check
+    end for
+    push with revised_values and replacement
+    record_value.replace_values(revised_values)
+    return record_value
+end action
+
+define action called orm_assign with parameters record_value and assignments:
+    store valid as orm_require_model of record_value.model_spec
+    store assigned_names as []
+    for each assignment in assignments:
+        store assignment_problem as orm_assignment_problem of record_value.model_spec and assignment and no
+        check if assignment_problem is not equal to "":
+            call orm_fail with "assign" and assignment_problem
+        end check
+        check if contains of assigned_names and assignment.field_name:
+            call orm_fail with "assign" and "a batch cannot repeat a field"
+        end check
+        push with assigned_names and assignment.field_name
+    end for
+    for each assignment in assignments:
+        store changed_record as orm_replace_assignment of record_value and assignment
+    end for
+    return record_value
+end action
+
+define action called orm_set with parameters record_value and field_name and field_value:
+    store assignment as orm_value of field_name and field_value
+    return orm_assign of record_value and [assignment]
+end action
+
+define action called orm_set_sensitive with parameters record_value and field_name and field_value:
+    store valid as orm_require_model of record_value.model_spec
+    store assignment as orm_value of field_name and field_value
+    store assignment_problem as orm_assignment_problem of record_value.model_spec and assignment and yes
+    check if assignment_problem is not equal to "":
+        call orm_fail with "assign sensitive field" and assignment_problem
+    end check
+    return orm_replace_assignment of record_value and assignment
+end action
+
+define action called orm_record_problem with parameters record_value and for_insert:
+    store model_problem as orm_model_problem of record_value.model_spec
+    check if model_problem is not equal to "":
+        return model_problem
+    end check
+    store assigned_names as []
+    for each assignment in record_value.assigned_values:
+        store value_problem as orm_assignment_problem of record_value.model_spec and assignment and yes
+        check if value_problem is not equal to "":
+            return value_problem
+        end check
+        check if contains of assigned_names and assignment.field_name:
+            return "a record cannot repeat a field"
+        end check
+        push with assigned_names and assignment.field_name
+    end for
+    check if for_insert:
+        for each field_spec in record_value.model_spec.fields:
+            check if (contains of assigned_names and field_spec.field_name) is equal to no:
+                check if field_spec.nullable is equal to no and field_spec.generated is equal to no and field_spec.has_default is equal to no and field_spec.server_default is equal to "":
+                    return "missing required field " with field_spec.field_name with "; supply it before saving"
+                end check
+            end check
+        end for
+    end check
+    return ""
+end action

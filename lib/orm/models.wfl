@@ -7,7 +7,13 @@ create container OrmModel:
     property relationships: List defaults []
 
     action relate needs relationship_spec: OrmRelationship:
-        push with relationships and relationship_spec
+        // Replace the list instead of mutating a caller-owned/default list.
+        store revised_relations as []
+        for each existing_relation in relationships:
+            push with revised_relations and existing_relation
+        end for
+        push with revised_relations and relationship_spec
+        change relationships to revised_relations
     end
 end
 

@@ -1,0 +1,146 @@
+include from "queries.wfl"
+
+create container OrmSession:
+    property connection
+    property owns_connection: Boolean defaults no
+    property closed: Boolean defaults no
+    property query_count: Number defaults 0
+    property last_sql: Text defaults ""
+    property last_parameter_count: Number defaults 0
+
+    action record_query needs sql_text: Text, parameter_total: Number:
+        change query_count to query_count plus 1
+        change last_sql to sql_text
+        change last_parameter_count to parameter_total
+    end
+    action mark_closed:
+        change closed to yes
+    end
+end
+
+define action called orm_open with parameters database_path:
+    open database at ("sqlite://" with database_path) as conn
+    create new OrmSession as session:
+        connection is conn
+        owns_connection is yes
+    end
+    return session
+end action
+
+define action called orm_borrow with parameters conn:
+    create new OrmSession as session:
+        connection is conn
+    end
+    return session
+end action
+
+define action called orm_close with parameters session:
+    check if session.closed is equal to no:
+        check if session.owns_connection:
+            store conn as session.connection
+            close database conn
+        end check
+        session.mark_closed()
+    end check
+    return yes
+end action
+
+define action called orm_require_open with parameters session:
+    check if session.closed:
+        call orm_fail with "connection" and "this ORM session is closed; open or borrow a live connection"
+    end check
+    return yes
+end action
+
+define action called orm_safe_diagnostic with parameters diagnostic and bound_values:
+    store safe_text as diagnostic
+    for each bound_value in bound_values:
+        check if (typeof of bound_value) is equal to "Text":
+            check if (length of bound_value) is greater than 0:
+                change safe_text to replace bound_value with "[redacted]" in safe_text
+            end check
+        end check
+    end for
+    return safe_text
+end action
+
+define action called orm_read_sql with parameters session and compiled:
+    store valid as orm_require_open of session
+    store conn as session.connection
+    session.record_query(compiled.sql_text, (length of compiled.bound_values))
+    try:
+        return query conn with compiled.sql_text and parameters compiled.bound_values
+    when error:
+        store diagnostic as orm_safe_diagnostic of error_message and compiled.bound_values
+        call orm_fail with "query" and (diagnostic with "; verify the model, migration status, and database access; assigned values are omitted")
+    end try
+end action
+
+define action called orm_write_sql with parameters session and compiled:
+    store valid as orm_require_open of session
+    store conn as session.connection
+    session.record_query(compiled.sql_text, (length of compiled.bound_values))
+    try:
+        return execute conn with compiled.sql_text and parameters compiled.bound_values
+    when error:
+        store diagnostic as orm_safe_diagnostic of error_message and compiled.bound_values
+        call orm_fail with "write" and (diagnostic with "; verify constraints, migration status, and database access; assigned values are omitted")
+    end try
+end action
+
+// Explicit SQL escape hatch. Identifiers/expressions are authored SQL; all
+// runtime values belong in bound_values. Native WFL rejects transaction-control
+// statements; use the same connection in a native in-transaction block instead.
+define action called orm_sql_query with parameters session and sql_text and bound_values:
+    return orm_read_sql of session and (orm_sql of sql_text and bound_values and "unknown")
+end action
+
+define action called orm_sql_execute with parameters session and sql_text and bound_values:
+    return orm_write_sql of session and (orm_sql of sql_text and bound_values and "unknown")
+end action
+
+define action called orm_find with parameters session and requested:
+    store compiled as orm_compile_select of requested and "records"
+    store native_rows as orm_read_sql of session and compiled
+    store mapped_rows as []
+    for each native_row in native_rows:
+        push with mapped_rows and (orm_map_row of requested.model_spec and native_row)
+    end for
+    return mapped_rows
+end action
+
+define action called orm_first with parameters session and requested:
+    create new OrmQuery as first_query:
+        model_spec is requested.model_spec
+        predicate is requested.predicate
+        selected_fields is requested.selected_fields
+        ordering is requested.ordering
+        page_limit is 1
+        page_offset is requested.page_offset
+    end
+    store mapped_rows as orm_find of session and first_query
+    check if (length of mapped_rows) is greater than 0:
+        return mapped_rows[0]
+    end check
+    return nothing
+end action
+
+define action called orm_find_key with parameters session and model_spec and identity_value:
+    store key_spec as orm_primary_field of model_spec
+    store requested as orm_query of model_spec
+    call orm_where with requested and (orm_compare of key_spec.field_name and "equal" and identity_value)
+    return orm_first of session and requested
+end action
+
+define action called orm_count with parameters session and requested:
+    store compiled as orm_compile_select of requested and "count"
+    store native_rows as orm_read_sql of session and compiled
+    store first_row as native_rows[0]
+    return first_row["orm_total"]
+end action
+
+define action called orm_exists with parameters session and requested:
+    store compiled as orm_compile_select of requested and "exists"
+    store native_rows as orm_read_sql of session and compiled
+    return (length of native_rows) is greater than 0
+end action
