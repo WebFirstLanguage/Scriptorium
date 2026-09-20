@@ -1,0 +1,96 @@
+// File-backed compatibility and failure contracts for the application adapter.
+include from "../app/db.wfl"
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "db-contracts"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "contracts.db"
+open database at ("sqlite://" with database_path) as conn
+call db_migrate with conn
+
+define action called reset_contract_rows with parameters conn:
+    in transaction on conn:
+        store removed_trigger as execute conn with "DROP TRIGGER IF EXISTS reject_installer_completion"
+        for each table_name in ["sessions" and "users" and "posts" and "pages" and "settings" and "media" and "login_attempts"]:
+            store removed_rows as execute conn with ("DELETE FROM " with table_name)
+        end for
+        store removed_sequences as execute conn with "DELETE FROM sqlite_sequence"
+    end transaction
+end action
+
+try:
+    describe "Application persistence compatibility":
+        test "empty settings and absent settings remain distinct":
+            call reset_contract_rows with conn
+            call setting_set with conn and "empty" and ""
+            call setting_default with conn and "empty" and "replacement"
+            expect setting_get of conn and "empty" and "fallback" to equal ""
+            expect setting_get of conn and "absent" and "fallback" to equal "fallback"
+            call setting_set with conn and "empty" and "updated"
+            expect setting_get of conn and "empty" and "fallback" to equal "updated"
+        end test
+
+        test "content lookup and aliases preserve draft and orphan behavior":
+            call reset_contract_rows with conn
+            store inserted_post as post_create of conn and "draft" and "Draft" and "body" and "draft" and 777
+            store post_row as post_by_slug of conn and "draft"
+            expect post_row["status"] to equal "draft"
+            expect post_row["author_id"] to equal 777
+            expect post_row["author_name"] to equal nothing
+            store inserted_page as page_create of conn and "draft-page" and "Draft page" and "body" and "draft" and nothing
+            expect page_by_slug of conn and "draft-page" to equal nothing
+            store page_row as page_by_id of conn and inserted_page["last_insert_id"]
+            expect page_row["author_id"] to equal nothing
+            store inserted_media as media_create of conn and "orphan.bin" and "source.bin" and "application/octet-stream" and 3 and 777
+            store media_rows as media_list_all of conn
+            store media_row as media_rows[0]
+            expect media_row["uploader_name"] to equal nothing
+            expect media_row["uploader_id"] to equal 777
+        end test
+
+        test "published ordering and page windows preserve exact projections":
+            call reset_contract_rows with conn
+            store first_post as post_create of conn and "first" and "First" and "one" and "published" and nothing
+            store second_post as post_create of conn and "second" and "Second" and "two" and "published" and nothing
+            store equal_times as execute conn with "UPDATE posts SET created_at = '2000-01-01 00:00:00'"
+            store first_page as post_list_published of conn and 1 and 0
+            store second_page as post_list_published of conn and 1 and 1
+            store first_row_value as first_page[0]
+            store second_row_value as second_page[0]
+            expect first_row_value["slug"] to equal "second"
+            expect second_row_value["slug"] to equal "first"
+            expect length of (post_list_published of conn and 0 and 0) to equal 0
+            expect length of (post_list_published of conn and -1 and 0) to equal 2
+            expect first_row_value["body_markdown"] to equal "two"
+            expect first_row_value["author_name"] to equal nothing
+        end test
+
+        test "signed SQLite identities above floating point precision remain exact":
+            call reset_contract_rows with conn
+            store inserted_user as execute conn with "INSERT INTO users (id, username, password_hash, role) VALUES (9007199254740993, 'large', 'synthetic-hash', 'author')"
+            store found_user as user_by_id of conn and "9007199254740993"
+            expect found_user["id"] to equal "9007199254740993"
+            store next_user as user_create of conn and "next" and "synthetic-hash" and "author"
+            expect next_user["last_insert_id"] to equal "9007199254740994"
+        end test
+
+        test "installer settings failure rolls back the user and earlier settings":
+            call reset_contract_rows with conn
+            call setting_set with conn and "site_title" and "Before"
+            store created_trigger as execute conn with "CREATE TRIGGER reject_installer_completion BEFORE INSERT ON settings WHEN NEW.skey = 'installed' BEGIN SELECT RAISE(ABORT, 'controlled installer failure'); END"
+            store rejected as no
+            try:
+                store installed_value as install_apply of conn and "After" and "Tagline" and "admin" and "synthetic-hash"
+            when error:
+                change rejected to yes
+                expect error_message contains "controlled installer failure" to be yes
+            end try
+            expect rejected to be yes
+            expect user_count of conn to equal 0
+            expect setting_get of conn and "site_title" and "missing" to equal "Before"
+            expect setting_get of conn and "site_tagline" and "missing" to equal "missing"
+            expect install_is_done of conn to be no
+        end test
+    end describe
+finally:
+    close database conn
+end try
