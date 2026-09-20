@@ -63,12 +63,13 @@ capability and provenance evidence remains in `runtime-capabilities.md`.
 The executable progression in `examples/orm/progression.test.wfl` passes three
 cases using explicit migrations from the first saved record through composed
 queries, transactions, relationship loading and reversible index changes.
-The combined candidate is `ae5395d9`, executable SHA256
-`76f612ca1bbaf4484b2cc2bda86d876588bc765de9c38b7daa8951bad143b911`.
+The final combined candidate is `df6ad9a2`, executable SHA256
+`b96c06f6013a9a64d4d042c9b379a30af1c8d274d7855b5ebe9d7fe14a750d1c`.
 All 16 existing database cases, three authentication cases and six rendering
-cases pass. The HTTP reviewer records 11/11 against the integrated application
-in `tests/integration/EVIDENCE.md`; the subsequent review fixes require the final
-complete-suite rerun.
+cases pass. The final complete gate passed 41/41 suites, including the HTTP
+review cases, legacy upgrade, migration recovery and pinned Scribe, on source
+`3bc7b4f`. [The verification record](orm-verification.md) retains the exact local
+provenance and distinguishes the still-pending official nightly acceptance.
 
 ### Retained regression chronology
 

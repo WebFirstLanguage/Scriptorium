@@ -29,10 +29,19 @@ Scribe remains pinned to `93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`.
 
 ## Local complete-suite gate
 
-The candidate complete runner passed 40/40 discovered suites before independent
-review added the historical-index regression. The final expanded source gate
-is pending. The earlier 40-suite log is
-`target/full-candidate-df6ad9a2-green.log` (ignored local evidence).
+The final candidate complete runner passed **41/41 discovered suites**, zero
+failures, exit 0, on Scriptorium source
+`3bc7b4faaf9c000047d940f0e420067b777db5c9`. This includes the historical-index
+review regression, strengthened CLI CRLF fixture and nested HTTP probe cleanup.
+The exact command was `target/runtime/combined-df6ad9a2/wfl.exe scripts/run_tests.wfl`.
+The ignored local log is `target/full-candidate-final.log`. The earlier complete
+40-suite result is retained in `target/full-candidate-df6ad9a2-green.log`.
+
+`python scripts/check_repo_hygiene.py` passed with 179 candidate paths; Git
+reported a clean worktree and `git diff --check` passed. The source audit found
+no active Python test implementation or driver. The only non-WFL files under
+tracked tests/scripts are the hygiene checker implementation and the existing
+Scribe update utility.
 
 The hygiene checker fixtures create disposable Git repositories and need child
 Git execution permission. A first sandboxed complete run passed 39/40 suites;

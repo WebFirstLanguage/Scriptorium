@@ -1,8 +1,10 @@
 # ORM acceptance audit
 
 This audit tracks the complete requested deliverable. Local candidate evidence
-does not substitute for the final resolved nightly-image CI run. The final PR,
-remote failure-propagation proof and final revision provenance remain pending.
+does not substitute for the final resolved nightly-image CI run. The final
+candidate passed 41/41 complete suites and repository hygiene; see
+`orm-verification.md`. The ready-to-merge PR, remote failure-propagation proof
+and final revision provenance remain pending.
 
 | Requirement | Implementation and executable evidence |
 | --- | --- |
@@ -40,7 +42,7 @@ remote failure-propagation proof and final revision provenance remain pending.
 | Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; final deliberate failing CI commit is still required |
 | Keep Linux/Windows governance and Blacksmith nightly | Updated Governance provisions current nightly assets on both platforms; WFL job freshly resolves/pins Docker digest and records runtime/source revisions |
 | Independent review and repaired findings | `orm-independent-review.md`, `independent-migration-review.md`, `runtime-review.md`, migration safety regressions and HTTP evidence distinguish source review from Maintainer approval; `type-analysis-review.md` records remaining runtime static-analysis diagnostics honestly |
-| Final ready-to-merge five-section PR | Pending final source freeze, complete local pass, hygiene, deliberate CI Red/Green, fresh nightly provenance and exact-head remote inspection |
+| Final ready-to-merge five-section PR | Source frozen, complete local pass and hygiene recorded; pending deliberate CI Red/Green, fresh nightly provenance and exact-head remote inspection |
 
 The upstream runtime fixes require a published nightly before final Scriptorium
 acceptance. The user authorized upstream implementation and separate PRs;
