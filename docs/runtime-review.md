@@ -202,3 +202,47 @@ Upstream fixes need WFL regression scenarios for each failed behavior, including
 negative cases, then the full Scriptorium suite and real HTTP/recovery checks
 against the resolved nightly image. Revisit this document after those fixes:
 it records the reviewed runtime revision, not permanent WFL limitations.
+
+## Upstream remedy review, 2026-09-20
+
+The baseline findings above remain evidence about `cb1dada`, not the updated
+runtime candidates. The following reviews concern the prerequisite changes;
+they do not constitute Maintainer approval or final Scriptorium acceptance.
+
+- HTTP: branch `codex/http-response-controls`, Green commit
+  `b8e5e8768a13c44aa033a3cd732b85f089262eff`, implements per-request
+  `and without following redirects` for buffered and streaming responses and
+  additive `header_values` arrays while retaining scalar `headers` and default
+  redirect following. A different agent independently reviewed this author's
+  change and found no blocking source issue. Its WFL regression suite passed
+  8/8; the locked workspace suite passed 2,414 tests with 27 existing ignores;
+  the existing gated runner passed 145 WFL programs with 24 existing skips.
+  Formatting, strict Clippy, and fuzz-workspace compilation passed. Evidence
+  and existing environment skips are recorded in the upstream commit.
+- Transactions: independent source review identified a cancellation lifetime
+  gap: a dropped transaction-body future could leave its transaction owned by
+  the registry while the interpreter remained alive. The owner reproduced it
+  with a real WFL concurrent HTTP peer and added an exact-slot
+  `TransactionBlockGuard` from reservation through body/commit. Re-review
+  confirmed that its synchronous registry removal releases the transaction on
+  cancellation, allowing the connection guard to roll back and restore foreign
+  keys. No remaining blocking source finding was identified; the owner's
+  rebuilt WFL cancellation regression and final gates remain separate evidence.
+- Processes: independent source review found that applying a child working
+  directory after authorizing a relative explicit executable could change
+  which file executed. Both launch paths now freeze the explicit executable's
+  canonical parent-directory identity before applying child CWD. Review also
+  found a source-fixer mismatch for the merged contextual `with code name`
+  token; conservative operand protection fixes the rename mismatch. WFL
+  regressions cover exact-path authorization across CWD and fix-then-run exit
+  status. Re-review found both issues resolved and no remaining blocking source
+  finding; final rebuilt tests and platform gates are the owner's evidence.
+
+The ORM query-counter investigation did not establish another prerequisite.
+WFL tests use an isolated environment, and each inherited mutable-value lookup
+deep-clones the parent value. A module-scoped session therefore produces a new
+container copy on another lookup; nested action argument binding itself retains
+the instance. Tests should construct a local borrowed session for each case,
+which retains real mutation and query-count assertions without sharing mutable
+fixture state. The testing guide documents isolation generally; stable cached
+copies of inherited mutable fixtures are not a documented contract.

@@ -15,8 +15,8 @@ define action called example_index_migration with parameters source_text:
     create new OrmMigration as indexed:
         migration_id is "20260920000100"
         migration_name is "Index note ownership"
-        up_steps is [(orm_migration_sql of "CREATE INDEX example_notes_author ON example_notes (author_id)" and [])]
-        down_steps is [(orm_migration_sql of "DROP INDEX example_notes_author" and [])]
+        up_steps is [(orm_migration_create_index of (orm_schema_table of notes_after) and owner_index)]
+        down_steps is [(orm_migration_drop_index of (orm_schema_table of notes_after) and owner_index)]
         managed_before is [authors_table and (orm_schema_table of notes_before)]
         managed_after is [authors_table and (orm_schema_table of notes_after)]
         source_text is source_text

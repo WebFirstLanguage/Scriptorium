@@ -133,6 +133,13 @@ describe "Migration CLI target selection and lifecycle":
     test "scaffold instructions produce an executable registered up and down migration":
         store site_root as migration_cli_fixture
         try:
+            // Exercise an actual Windows-style checkout, including the registry
+            // line that this test edits after following scaffold instructions.
+            store original_bridge_path as path_join of site_root and "app/migrations.wfl"
+            store original_bridge as test_read_text of original_bridge_path
+            change original_bridge to replace "\r\n" with "\n" in original_bridge
+            change original_bridge to replace "\n" with "\r\n" in original_bridge
+            call test_write_text with original_bridge_path and original_bridge
             store before_names as list_dir of (path_join of site_root and "app/migrations")
             store scaffolded as migration_cli_run of site_root and ["new", "add_summary"]
             expect scaffolded["exit_code"] to equal 0
@@ -156,6 +163,8 @@ describe "Migration CLI target selection and lifecycle":
             call test_write_text with created_path and completed_text
             store bridge_path as path_join of site_root and "app/migrations.wfl"
             store bridge_text as test_read_text of bridge_path
+            // The disposable registry edit must behave on CRLF Git checkouts.
+            change bridge_text to replace "\r\n" with "\n" in bridge_text
             change bridge_text to replace "include from \"migrations/20200102000000_session_csrf.wfl\"" with ("include from \"migrations/" with created_name with "\"") in bridge_text
             store registered_text as ""
             for each source_line in (split bridge_text by "\n"):

@@ -1,9 +1,10 @@
 # Dedicated capability probes; application process execution remains disabled.
 allow_shell_execution = true
-shell_execution_mode = allowlist_only
-allowed_shell_commands = wfl
+# The probes launch current_executable by its exact absolute identity, including
+# uninstalled validation candidates. Process permission is confined to tests.
+shell_execution_mode = sanitized
 timeout_seconds = 20
-logging_enabled = false
+execution_logging = false
 debug_report_enabled = false
 kill_on_shutdown = true
 web_server_bind_address = 127.0.0.1
