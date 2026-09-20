@@ -229,4 +229,3 @@ connection-pool accidents, or accept silent data loss. These observations
 block a production-ready claim; they do not justify a reduced feature set,
 Python test fallback, or shipping an unintegrated prototype as the requested
 finished ORM.
-
