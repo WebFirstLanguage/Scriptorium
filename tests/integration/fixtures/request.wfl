@@ -1,0 +1,15 @@
+// A native WFL HTTP request with its own five-second execution budget.
+// The WFL driver owns this process and adds a six-second completion deadline.
+open file at args[0] for reading as request_file
+wait for store request_text as read content from request_file
+close file request_file
+store request_spec as parse_json of request_text
+store request_url as request_spec["url"]
+store request_method as request_spec["method"]
+store request_body as request_spec["body"]
+create map request_headers:
+    "Cookie" is request_spec["cookie"]
+    "Content-Type" is request_spec["content_type"]
+end map
+open url at request_url with method request_method and headers request_headers and body request_body and without following redirects and read response as request_reply
+display stringify_json of request_reply

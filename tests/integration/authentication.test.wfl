@@ -1,0 +1,96 @@
+include from "fixtures/http-helpers.wfl"
+
+describe "Installation and authenticated HTTP sessions":
+    test "installer rejects CSRF without mutation and locks after successful setup":
+        store site_spec as http_new_site of "configured"
+        try:
+            store running_site as http_launch of site_spec
+            try:
+                store first_visit as http_get of site_spec and "/" and ""
+                call http_redirect with first_visit and "/install"
+                store installer as http_get of site_spec and "/install" and ""
+                store csrf_cookie as http_cookie of installer and "csrf"
+                store invalid_form as "site_title=Rejected&username=admin&password=Synthetic-pass-2026!&password_confirm=Synthetic-pass-2026!&csrf_token=wrong"
+                store invalid_install as http_post of site_spec and "/install" and csrf_cookie and invalid_form
+                expect invalid_install["status"] to equal 200
+                expect invalid_install["body"] to contain "form had expired"
+                expect http_total of site_spec and "users" to equal 0
+                expect http_total of site_spec and "sessions" to equal 0
+                store install_token as http_csrf of installer
+                store invalid_password as http_post of site_spec and "/install" and csrf_cookie and ("site_title=Rejected&username=admin&password=Synthetic-pass-2026!&password_confirm=Different&csrf_token=" with install_token)
+                expect invalid_password["status"] to equal 200
+                expect invalid_password["body"] to contain "Passwords do not match"
+                expect http_total of site_spec and "users" to equal 0
+                store admin_cookie as http_install of site_spec
+                expect http_total of site_spec and "users" to equal 1
+                expect http_total of site_spec and "sessions" to equal 1
+                store dashboard as http_get of site_spec and "/admin" and admin_cookie
+                expect dashboard["status"] to equal 200
+                expect dashboard["body"] to contain "Synthetic Journal"
+                store late_get as http_get of site_spec and "/install" and ""
+                call http_redirect with late_get and "/"
+                store late_post as http_post of site_spec and "/install" and csrf_cookie and invalid_form
+                call http_redirect with late_post and "/"
+                expect http_total of site_spec and "users" to equal 1
+                store public_home as http_get of site_spec and "/" and ""
+                expect public_home["body"] to contain "Synthetic Journal"
+                expect public_home["body"] contains "Rejected" to be no
+            finally:
+                call http_stop with running_site
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+
+    test "login cookies CSRF logout and server-side expiry cross the real router":
+        store site_spec as http_new_site of "configured"
+        try:
+            store running_site as http_launch of site_spec
+            try:
+                store installed_cookie as http_install of site_spec
+                store login_form as http_get of site_spec and "/admin/login" and ""
+                store login_cookie as http_cookie of login_form and "csrf"
+                store login_token as http_csrf of login_form
+                store missing_csrf as http_post of site_spec and "/admin/login" and "" and "username=admin&password=Synthetic-pass-2026!"
+                expect missing_csrf["status"] to equal 200
+                expect missing_csrf["body"] to contain "form had expired"
+                expect http_total of site_spec and "login_attempts" to equal 0
+                store wrong_login as http_post of site_spec and "/admin/login" and login_cookie and ("username=admin&password=wrong&csrf_token=" with login_token)
+                expect wrong_login["status"] to equal 200
+                expect wrong_login["body"] to contain "Wrong username or password"
+                expect http_total of site_spec and "login_attempts" to equal 1
+                store authenticated as http_post of site_spec and "/admin/login" and login_cookie and ("username=admin&password=Synthetic-pass-2026!&csrf_token=" with login_token)
+                call http_redirect with authenticated and "/admin"
+                store response_headers as authenticated["headers"]
+                expect response_headers["set-cookie"] to contain "HttpOnly"
+                expect response_headers["set-cookie"] to contain "SameSite=Lax"
+                expect response_headers["set-cookie"] to contain "Path=/"
+                store session_cookie as http_cookie of authenticated and "sid"
+                expect session_cookie is not equal to installed_cookie to be yes
+                expect http_total of site_spec and "login_attempts" to equal 0
+                store dashboard as http_get of site_spec and "/admin" and session_cookie
+                store session_token as http_csrf of dashboard
+                store get_logout as http_get of site_spec and "/admin/logout" and session_cookie
+                call http_redirect with get_logout and "/admin"
+                store missing_logout as http_post of site_spec and "/admin/logout" and session_cookie and ""
+                expect missing_logout["status"] to equal 403
+                store still_logged_in as http_get of site_spec and "/admin" and session_cookie
+                expect still_logged_in["status"] to equal 200
+                store logout_reply as http_post of site_spec and "/admin/logout" and session_cookie and ("csrf_token=" with session_token)
+                call http_redirect with logout_reply and "/admin/login"
+                store logout_headers as logout_reply["headers"]
+                expect logout_headers["set-cookie"] to contain "Max-Age=0"
+                store after_logout as http_get of site_spec and "/admin" and session_cookie
+                call http_redirect with after_logout and "/admin/login"
+                store expired as http_execute of site_spec and "UPDATE sessions SET expires_at = '2000-01-01 00:00:00'"
+                store after_expiry as http_get of site_spec and "/admin" and installed_cookie
+                call http_redirect with after_expiry and "/admin/login"
+            finally:
+                call http_stop with running_site
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe

@@ -1,0 +1,45 @@
+include from "fixtures/http-helpers.wfl"
+
+define action called assert_port_site with parameters config_mode:
+    // Keep the former hardcoded port free too, so a regression can start and
+    // report its actual URL. Never stop another process to acquire a port.
+    store default_port as http_available_port of 8080
+    store site_spec as http_new_site of config_mode
+    try:
+        store running_site as http_launch of site_spec
+        try:
+            store installer as http_get of site_spec and "/install" and ""
+            expect installer["status"] to equal 200
+            store response_headers as installer["headers"]
+            expect response_headers["content-type"] to contain "text/html"
+            expect installer["body"] to contain "Set up your site"
+            expect installer["body"] to contain "Scriptorium"
+            expect installer["body"] to contain "action=\"/install\""
+            expect installer["body"] to contain "name=\"csrf_token\""
+            store server_process as running_site["process"]
+            wait for read output from process server_process as later_output
+            store actual_output as running_site["startup"] with later_output
+            expect actual_output to contain ("Scriptorium is running at " with site_spec["url"])
+            expect actual_output to contain ("First run — open " with site_spec["url"] with "/install")
+        when error:
+            display running_site["startup"]
+            call raise_error with error_message
+        finally:
+            call http_stop with running_site
+        end try
+    finally:
+        call http_destroy with site_spec
+    end try
+end action
+
+describe "Real HTTP listening-port compatibility":
+    test "configured non-default port serves installer and startup URLs":
+        call assert_port_site with "configured"
+    end test
+    test "missing port setting keeps port 8080":
+        call assert_port_site with "missing"
+    end test
+    test "missing site configuration keeps port 8080 on loopback":
+        call assert_port_site with "absent"
+    end test
+end describe

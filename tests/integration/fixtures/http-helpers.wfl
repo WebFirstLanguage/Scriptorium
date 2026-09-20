@@ -1,0 +1,311 @@
+// All fixture generation, process ownership, HTTP requests and assertions are
+// WFL. Only synthetic files under this run's target/test-artifacts root change.
+store http_repo_root as current_directory
+store http_source_root as http_repo_root
+store http_runtime as call current_executable
+check if (length of args) is greater than 0:
+    change http_runtime to args[0]
+end check
+check if (length of args) is greater than 1:
+    change http_source_root to args[1]
+end check
+store http_fixture_root as path_join of http_repo_root and "tests/integration/fixtures"
+store http_base_config as "web_server_bind_address = 127.0.0.1\ntimeout_seconds = 60\nexecution_logging = false\nlogging_enabled = false\ndebug_report_enabled = false\nkill_on_shutdown = true\nweb_server_max_body_size = 10485760\n"
+
+define action called http_write with parameters file_path and file_text:
+    call makedirs with (path_dirname of file_path)
+    open file at file_path for writing as output_file
+    wait for write content file_text into output_file
+    close file output_file
+end action
+
+define action called http_copy_tree with parameters source_dir and target_dir:
+    call makedirs with target_dir
+    store entry_names as list_dir of source_dir
+    for each entry_name in entry_names:
+        check if entry_name is not equal to ".git" and entry_name is not equal to "uploads":
+            store source_path as path_join of source_dir and entry_name
+            store target_path as path_join of target_dir and entry_name
+            check if is_dir of source_path:
+                call http_copy_tree with source_path and target_path
+            otherwise:
+                check if entry_name ends with ".wfl" or entry_name ends with ".html":
+                    call copy_file with source_path and target_path
+                end check
+            end check
+        end check
+    end for
+end action
+
+define action called http_available_port with parameters wanted_port:
+    // Binding proves ownership before any request; occupied ports fail closed.
+    listen on port wanted_port as reservation_server
+    store reservation_text as "" with reservation_server
+    close server reservation_server
+    store address_parts as split reservation_text by ":"
+    return parse_json of address_parts[(length of address_parts) minus 1]
+end action
+
+define action called http_new_site with parameters config_mode:
+    store run_id as generate_uuid
+    store run_root as path_join of http_repo_root and "target/test-artifacts/http" and run_id
+    store site_root as path_join of run_root and "site"
+    try:
+        call makedirs with site_root
+        call http_write with (path_join of run_root and ".wflcfg") and http_base_config
+        call copy_file with (path_join of http_source_root and "main.wfl") and (path_join of site_root and "main.wfl")
+        for each source_name in ["app", "admin", "themes", "lib/orm", "migrations"]:
+            store source_dir as path_join of http_source_root and source_name
+            check if is_dir of source_dir:
+                call http_copy_tree with source_dir and (path_join of site_root and source_name)
+            end check
+        end for
+        call makedirs with (path_join of site_root and "static")
+        store scribe_target as path_join of site_root and "lib/scribe/src"
+        call makedirs with scribe_target
+        call copy_file with (path_join of http_repo_root and "lib/scribe/src/scribe.wfl") and (path_join of scribe_target and "scribe.wfl")
+        store selected_port as 8080
+        check if config_mode is equal to "configured" or config_mode is equal to "legacy":
+            change selected_port to http_available_port of 0
+            expect selected_port is not equal to 8080 to be yes
+        otherwise:
+            store checked_port as http_available_port of 8080
+        end check
+        check if config_mode is not equal to "absent":
+            store site_config as http_base_config
+            check if config_mode is not equal to "legacy":
+                change site_config to site_config with "data_dir = runtime-data\n"
+            end check
+            check if config_mode is equal to "configured" or config_mode is equal to "legacy":
+                change site_config to site_config with "web_server_port = " with selected_port with "\n"
+            end check
+            call http_write with (path_join of site_root and ".wflcfg") and site_config
+        end check
+        store database_path as path_join of site_root and "runtime-data/scriptorium.db"
+        store uploads_path as path_join of site_root and "runtime-data/uploads"
+        check if config_mode is equal to "absent" or config_mode is equal to "legacy":
+            change database_path to path_join of site_root and "scriptorium.db"
+            change uploads_path to path_join of site_root and "static/uploads"
+        end check
+        create map site_spec:
+            "root" is run_root
+            "site" is site_root
+            "port" is selected_port
+            "url" is "http://127.0.0.1:" with selected_port
+            "database" is database_path
+            "uploads" is uploads_path
+        end map
+        return site_spec
+    when error:
+        check if is_dir of run_root:
+            call remove_dir with run_root and yes
+        end check
+        call raise_error with error_message
+    end try
+end action
+
+define action called http_session_token with parameters site_spec and session_cookie:
+    store dashboard as http_get of site_spec and "/admin" and session_cookie
+    expect dashboard["status"] to equal 200
+    return http_csrf of dashboard
+end action
+
+define action called http_first_row with parameters site_spec and sql_text:
+    store selected_rows as http_rows of site_spec and sql_text
+    expect length of selected_rows to equal 1
+    return selected_rows[0]
+end action
+
+
+define action called http_launch with parameters site_spec:
+    store site_root as site_spec["site"]
+    store main_path as path_join of site_root and "main.wfl"
+    wait for spawn command http_runtime with arguments [main_path] in directory site_root as server_process
+    store startup_text as ""
+    store ready_seen as no
+    try:
+        count from 1 to 400:
+            wait for read output from process server_process as output_chunk
+            change startup_text to startup_text with output_chunk
+            check if startup_text contains "Scriptorium is running at ":
+                change ready_seen to yes
+                break
+            end check
+            check if (process server_process is running) is no:
+                wait for process server_process to complete with timeout 2 and read result as dead_server
+                display startup_text with dead_server["output"] with dead_server["error"]
+                call raise_error with "Disposable Scriptorium exited before readiness"
+            end check
+            wait for 50 milliseconds
+        end count
+        check if ready_seen is no:
+            display startup_text
+            call raise_error with "Disposable Scriptorium did not start within 20 seconds"
+        end check
+    when error:
+        close process server_process
+        call raise_error with error_message
+    end try
+    create map running_site:
+        "spec" is site_spec
+        "process" is server_process
+        "startup" is startup_text
+    end map
+    return running_site
+end action
+
+define action called http_stop with parameters running_site:
+    store server_process as running_site["process"]
+    try:
+        check if process server_process is running:
+            wait for read output from process server_process as final_output
+            check if final_output contains "Request error":
+                display final_output
+            end check
+        otherwise:
+            wait for process server_process to complete with timeout 2 and read result as completed_server
+            display completed_server["output"] with completed_server["error"]
+        end check
+    finally:
+        close process server_process
+    end try
+    expect (process server_process is running) to equal no
+end action
+
+define action called http_destroy with parameters site_spec:
+    call remove_dir with site_spec["root"] and yes
+end action
+
+define action called http_request with parameters site_spec and route_path and verb_text and cookie_text and body_text and content_type_text:
+    store request_id as generate_uuid
+    store request_path as path_join of site_spec["root"] and (request_id with ".json")
+    create map request_spec:
+        "url" is site_spec["url"] with route_path
+        "method" is verb_text
+        "cookie" is cookie_text
+        "body" is body_text
+        "content_type" is content_type_text
+    end map
+    call http_write with request_path and (stringify_json of request_spec)
+    store request_program as path_join of http_fixture_root and "request.wfl"
+    wait for spawn command http_runtime with arguments [request_program, request_path] as request_process
+    try:
+        wait for process request_process to complete with timeout 6 and read result as completed_request
+        check if completed_request["exit_code"] is not equal to 0:
+            display completed_request["error"]
+            call raise_error with ("HTTP request failed for " with verb_text with " " with route_path)
+        end check
+        return parse_json of completed_request["output"]
+    finally:
+        close process request_process
+        delete file at request_path
+    end try
+end action
+
+define action called http_get with parameters site_spec and route_path and cookie_text:
+    return http_request of site_spec and route_path and "GET" and cookie_text and "" and "application/x-www-form-urlencoded"
+end action
+
+define action called http_post with parameters site_spec and route_path and cookie_text and body_text:
+    return http_request of site_spec and route_path and "POST" and cookie_text and body_text and "application/x-www-form-urlencoded"
+end action
+
+define action called http_redirect with parameters reply and destination:
+    expect reply["status"] to equal 303
+    store response_headers as reply["headers"]
+    expect response_headers["location"] to equal destination
+end action
+
+define action called http_cookie with parameters reply and cookie_name:
+    store value_map as reply["header_values"]
+    expect value_map contains "set-cookie" to be yes
+    store cookie_values as []
+    change cookie_values to value_map["set-cookie"]
+    for each cookie_value in cookie_values:
+        check if cookie_value starts with (cookie_name with "="):
+            store cookie_parts as split cookie_value by ";"
+            return cookie_parts[0]
+        end check
+    end for
+    call raise_error with ("Expected response cookie " with cookie_name)
+end action
+
+define action called http_csrf with parameters reply:
+    store html_text as reply["body"]
+    store token_marker as "name=\"csrf_token\" value=\""
+    store token_start as indexof of html_text and token_marker
+    expect token_start is greater than or equal to 0 to be yes
+    change token_start to token_start plus (length of token_marker)
+    store token_tail as substring of html_text and token_start and ((length of html_text) minus token_start)
+    store token_end as indexof of token_tail and "\""
+    expect token_end is greater than 0 to be yes
+    return substring of token_tail and 0 and token_end
+end action
+
+define action called http_install with parameters site_spec:
+    store installer as http_get of site_spec and "/install" and ""
+    expect installer["status"] to equal 200
+    store install_token as http_csrf of installer
+    store install_cookie as http_cookie of installer and "csrf"
+    store install_form as "site_title=Synthetic+Journal&site_tagline=HTTP+fixtures&username=admin&password=Synthetic-pass-2026!&password_confirm=Synthetic-pass-2026!&csrf_token=" with install_token
+    store installed as http_post of site_spec and "/install" and install_cookie and install_form
+    call http_redirect with installed and "/admin"
+    return http_cookie of installed and "sid"
+end action
+
+define action called http_login with parameters site_spec and username_text and password_text:
+    store login_form as http_get of site_spec and "/admin/login" and ""
+    store login_token as http_csrf of login_form
+    store login_cookie as http_cookie of login_form and "csrf"
+    store credentials as "username=" with username_text with "&password=" with password_text with "&csrf_token=" with login_token
+    store logged_in as http_post of site_spec and "/admin/login" and login_cookie and credentials
+    call http_redirect with logged_in and "/admin"
+    return http_cookie of logged_in and "sid"
+end action
+
+define action called http_rows with parameters site_spec and sql_text:
+    store database_url as "sqlite://" with site_spec["database"]
+    open database at database_url as inspection_db
+    try:
+        return query inspection_db with sql_text
+    finally:
+        close database inspection_db
+    end try
+end action
+
+define action called http_total with parameters site_spec and table_name:
+    store totals as http_rows of site_spec and ("SELECT COUNT(*) AS total FROM " with table_name)
+    store total_row as totals[0]
+    return total_row["total"]
+end action
+
+define action called http_execute with parameters site_spec and sql_text:
+    // Synthetic fixture state only (expiry/window simulation), never app setup.
+    store database_url as "sqlite://" with site_spec["database"]
+    open database at database_url as inspection_db
+    try:
+        return execute inspection_db with sql_text
+    finally:
+        close database inspection_db
+    end try
+end action
+
+define action called http_upload with parameters site_spec and cookie_text and csrf_text and filename_text and file_text:
+    store multipart_body as "--wfl-fixture-boundary\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n" with csrf_text with "\r\n--wfl-fixture-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" with filename_text with "\"\r\nContent-Type: image/png\r\n\r\n" with file_text with "\r\n--wfl-fixture-boundary--\r\n"
+    return http_request of site_spec and "/admin/media/upload" and "POST" and cookie_text and multipart_body and "multipart/form-data; boundary=wfl-fixture-boundary"
+end action
+
+define action called http_copy_owned_data with parameters source_dir and target_dir:
+    // Only caller-created synthetic data paths may reach this backup helper.
+    call makedirs with target_dir
+    store entry_names as list_dir of source_dir
+    for each entry_name in entry_names:
+        store source_path as path_join of source_dir and entry_name
+        store target_path as path_join of target_dir and entry_name
+        check if is_dir of source_path:
+            call http_copy_owned_data with source_path and target_path
+        otherwise:
+            call copy_file with source_path and target_path
+        end check
+    end for
+end action

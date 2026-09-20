@@ -1,0 +1,43 @@
+include from "fixtures/http-helpers.wfl"
+
+describe "Persisted HTTP login throttling":
+    test "ten failed credentials block the next request and expired attempts recover":
+        store site_spec as http_new_site of "configured"
+        try:
+            store running_site as http_launch of site_spec
+            store login_token as ""
+            store login_cookie as ""
+            try:
+                store installed_cookie as http_install of site_spec
+                store login_form as http_get of site_spec and "/admin/login" and ""
+                change login_token to http_csrf of login_form
+                change login_cookie to http_cookie of login_form and "csrf"
+                count from 1 to 10:
+                    store rejected as http_post of site_spec and "/admin/login" and login_cookie and ("username=nonexistent&password=wrong&csrf_token=" with login_token)
+                    expect rejected["status"] to equal 200
+                    expect rejected["body"] to contain "Wrong username or password"
+                end count
+                expect http_total of site_spec and "login_attempts" to equal 10
+                store throttled as http_post of site_spec and "/admin/login" and login_cookie and ("username=admin&password=Synthetic-pass-2026!&csrf_token=" with login_token)
+                expect throttled["status"] to equal 429
+                expect http_total of site_spec and "sessions" to equal 1
+            finally:
+                call http_stop with running_site
+            end try
+            store restarted as http_launch of site_spec
+            try:
+                store blocked_after_restart as http_post of site_spec and "/admin/login" and login_cookie and ("username=admin&password=Synthetic-pass-2026!&csrf_token=" with login_token)
+                expect blocked_after_restart["status"] to equal 429
+                store old_attempts as http_execute of site_spec and "UPDATE login_attempts SET attempted_at = '2000-01-01 00:00:00'"
+                store recovered_cookie as http_login of site_spec and "admin" and "Synthetic-pass-2026!"
+                store dashboard as http_get of site_spec and "/admin" and recovered_cookie
+                expect dashboard["status"] to equal 200
+                expect http_total of site_spec and "login_attempts" to equal 0
+            finally:
+                call http_stop with restarted
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe

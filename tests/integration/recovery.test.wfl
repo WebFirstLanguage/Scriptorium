@@ -1,0 +1,73 @@
+include from "fixtures/http-helpers.wfl"
+
+describe "Synthetic site restart and database-upload recovery":
+    test "restart and a stopped-site backup restore users settings content and matching uploads":
+        store site_spec as http_new_site of "configured"
+        try:
+            store running_site as http_launch of site_spec
+            store asset_route as ""
+            try:
+                store admin_cookie as http_install of site_spec
+                store admin_token as http_session_token of site_spec and admin_cookie
+                store saved_post as http_post of site_spec and "/admin/posts" and admin_cookie and ("title=Recovered+post&slug=recovered&body_markdown=Retained+body&status=published&csrf_token=" with admin_token)
+                call http_redirect with saved_post and "/admin/posts"
+                store saved_settings as http_post of site_spec and "/admin/settings" and admin_cookie and ("site_title=Recovery+Journal&site_tagline=Matching+backup&posts_per_page=3&csrf_token=" with admin_token)
+                call http_redirect with saved_settings and "/admin/settings"
+                store saved_media as http_upload of site_spec and admin_cookie and admin_token and "recovery.png" and "matching backup bytes"
+                call http_redirect with saved_media and "/admin/media"
+                store media_row as http_first_row of site_spec and "SELECT filename FROM media"
+                change asset_route to "/assets/uploads/" with media_row["filename"]
+            finally:
+                call http_stop with running_site
+            end try
+            store data_root as path_join of site_spec["site"] and "runtime-data"
+            store backup_root as path_join of site_spec["root"] and "backup"
+            // Copy only after the owned server is reaped. Copy the entire
+            // synthetic data directory, including SQLite sidecars if present.
+            call http_copy_owned_data with data_root and backup_root
+            store restarted as http_launch of site_spec
+            try:
+                store locked as http_get of site_spec and "/install" and ""
+                call http_redirect with locked and "/"
+                store public_post as http_get of site_spec and "/post/recovered" and ""
+                expect public_post["status"] to equal 200
+                expect public_post["body"] to contain "Retained body"
+                expect public_post["body"] to contain "Recovery Journal"
+                store asset_reply as http_get of site_spec and asset_route and ""
+                expect asset_reply["body"] to equal "matching backup bytes"
+                store logged_cookie as http_login of site_spec and "admin" and "Synthetic-pass-2026!"
+                store live_token as http_session_token of site_spec and logged_cookie
+                store changed as http_post of site_spec and "/admin/settings" and logged_cookie and ("site_title=After+backup&posts_per_page=9&csrf_token=" with live_token)
+                call http_redirect with changed and "/admin/settings"
+            finally:
+                call http_stop with restarted
+            end try
+            call remove_dir with data_root and yes
+            call http_copy_owned_data with backup_root and data_root
+            store restored as http_launch of site_spec
+            try:
+                store public_home as http_get of site_spec and "/" and ""
+                expect public_home["body"] to contain "Recovery Journal"
+                expect public_home["body"] contains "After backup" to be no
+                store post_reply as http_get of site_spec and "/post/recovered" and ""
+                expect post_reply["status"] to equal 200
+                expect post_reply["body"] to contain "Retained body"
+                store media_reply as http_get of site_spec and asset_route and ""
+                expect media_reply["status"] to equal 200
+                expect media_reply["body"] to equal "matching backup bytes"
+                store restored_cookie as http_login of site_spec and "admin" and "Synthetic-pass-2026!"
+                expect restored_cookie starts with "sid=" to be yes
+                expect http_total of site_spec and "users" to equal 1
+                expect http_total of site_spec and "posts" to equal 1
+                expect http_total of site_spec and "media" to equal 1
+                store integrity as http_first_row of site_spec and "PRAGMA integrity_check"
+                expect integrity["integrity_check"] to equal "ok"
+                expect length of (http_rows of site_spec and "PRAGMA foreign_key_check") to equal 0
+            finally:
+                call http_stop with restored
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe
