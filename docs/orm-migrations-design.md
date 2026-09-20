@@ -1,9 +1,10 @@
 # ORM and versioned migrations
 
-Status: capability verification and implementation plan, 2026-09-20. This is
-not an implemented ORM or a release claim. The acceptance scope includes the
-entire persistence layer, the entire WFL-only test infrastructure, recovery,
-independent technical review, and final remote CI evidence.
+Status: implemented architecture with verification and independent review in
+progress, 2026-09-20. The library and application integration are implemented;
+final recovery checks and remote evidence remain required before release.
+The actual API is documented in [orm.md](orm.md); administrative operations are
+documented in [migrations.md](migrations.md).
 
 ## Foundations and compatibility
 
@@ -30,11 +31,13 @@ uploads, URLs, `data_dir`, and the 8080 port fallback. Legacy relationships do
 not have foreign-key constraints or cascades; migration must not invent them.
 Keep the Scribe gitlink and the existing application/include layout.
 
-## Intended architecture
+## Implemented architecture
 
-Extend the existing linear include chain between `util.wfl` and `db.wfl` with
-a small reusable ORM layer and versioned migration support. Application model
-definitions belong in `app/`; the ORM does not know Scriptorium's seven tables.
+The existing linear include chain now connects `db.wfl` through
+`persistence-helpers.wfl` and `models.wfl` to `app/migrations.wfl`. That
+bridge includes independent branches for `util.wfl`, the reusable ORM chain,
+and immutable historical version definitions. Application model definitions
+belong in `app/`; the ORM does not know Scriptorium's seven tables.
 Existing `db.wfl` action names remain compatibility adapters. Explicit SQL
 exceptions are limited to specialized SQLite time expressions or similarly
 justified operations, use the same connection scope, and bind all values.
@@ -69,6 +72,12 @@ startup and prints the target path before mutation. Commands scaffold immutable
 ordered migrations, inspect status, plan without mutation, migrate all/up to a
 target, and roll back a count/to a target only after checking reversibility.
 Historical definitions and their checksums cannot depend on current models.
+
+Runtime probes established that dynamic include aliases are unsupported.
+Versions therefore use explicit static includes and an ordered typed registry.
+Scaffolding creates a version file and gives exact registration instructions;
+it does not pretend to discover dynamic exports. Checksums combine immutable
+source (CRLF normalized to LF) with a deterministic ordered descriptor.
 
 The ledger records identifiers, names, checksums, timestamps and ordered apply/
 rollback events. Validate duplicate/order/history errors before schema writes.

@@ -16,8 +16,7 @@ include from "../lib/scribe/src/scribe.wfl"
 // Shared site context, present on every page as `site`.
 define action called site_context with parameters conn and user:
     store nav_pages as page_list_published of conn
-    store yr_rows as query conn with "SELECT strftime('%Y','now') AS y"
-    store yr_row as yr_rows[0]
+    store current_year as db_current_year of conn
     create map site_map:
         "title" is setting_get of conn and "site_title" and "Scriptorium"
         "tagline" is setting_get of conn and "site_tagline" and "Words, well kept."
@@ -26,7 +25,7 @@ define action called site_context with parameters conn and user:
         "is_admin" is is_admin of user
         "csrf" is field_or of user and "csrf_token" and ""
         "asset_base" is "/assets"
-        "year" is yr_row["y"]
+        "year" is current_year
     end map
     return site_map
 end action

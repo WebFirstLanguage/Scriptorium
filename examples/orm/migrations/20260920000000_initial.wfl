@@ -1,0 +1,62 @@
+// Immutable version-specific schema, independent of the current model module.
+include from "../../../lib/orm/migrations.wfl"
+
+define action called example_v1_authors:
+    create new OrmField as author_key:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as name_field:
+        field_name is "name"
+        unique_value is yes
+    end
+    create new OrmModel as authors:
+        table_name is "example_authors"
+        fields is [author_key and name_field]
+    end
+    return authors
+end action
+
+define action called example_v1_notes:
+    create new OrmField as note_key:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as title_field:
+        field_name is "title"
+    end
+    create new OrmField as owner_field:
+        field_name is "author_id"
+        value_type is "identity"
+        nullable is yes
+    end
+    create new OrmField as urgent_field:
+        field_name is "urgent"
+        value_type is "boolean"
+        has_default is yes
+        default_value is no
+    end
+    create new OrmModel as notes:
+        table_name is "example_notes"
+        fields is [note_key and title_field and owner_field and urgent_field]
+    end
+    return notes
+end action
+
+define action called example_initial_migration with parameters source_text:
+    store authors_table as orm_schema_table of (example_v1_authors)
+    store notes_table as orm_schema_table of (example_v1_notes)
+    create new OrmMigration as initial:
+        migration_id is "20260920000000"
+        migration_name is "Create authors and notes"
+        up_steps is [(orm_migration_create_table of authors_table) and (orm_migration_create_table of notes_table)]
+        managed_after is [authors_table and notes_table]
+        irreversible_reason is "dropping the initial tables would destroy saved notes"
+        source_text is source_text
+    end
+    return initial
+end action

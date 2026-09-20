@@ -157,6 +157,27 @@ try:
             expect orm_count of session and (orm_query of entries) to equal 0
         end test
 
+        test "nested transactions reject and propagate rollback without corrupting the connection":
+            call fixture_reset_entries with session
+            store conn as session.connection
+            store rejected as no
+            try:
+                in transaction on conn:
+                    store pending as fixture_entry of session and entries and "outer"
+                    in transaction on conn:
+                        store nested as fixture_entry of session and entries and "nested"
+                    end transaction
+                end transaction
+            when error:
+                change rejected to yes
+                expect (to_lowercase of error_message) contains "transaction" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_count of session and (orm_query of entries) to equal 0
+            store after_failure as fixture_entry of session and entries and "after"
+            expect orm_count of session and (orm_query of entries) to equal 1
+        end test
+
         test "large integer identities round trip without floating point":
             call fixture_reset_entries with session
             call orm_sql_execute with session and "INSERT INTO entries (id, slug) VALUES (9007199254740993, ?)" and ["large"]

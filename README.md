@@ -37,6 +37,11 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 - **Swappable themes** — the public site is built from reusable **sections** and
   assembled into pages: every page is a **header** + a **body** + a **footer**,
   in that order (`themes/base/`). See [`docs/THEMING.md`](docs/THEMING.md).
+- **Reusable WFL ORM and versioned SQLite migrations** — validated models,
+  records, composed queries, explicit relationship loading and transactional
+  upgrades for all seven application tables. See the [ORM API](docs/orm.md),
+  [executable progression](examples/orm/progression.test.wfl), and
+  [migration and recovery guide](docs/migrations.md).
 
 | Admin dashboard | Post editor | Sign in |
 |---|---|---|
@@ -61,7 +66,8 @@ the working directory):
 wfl main.wfl
 ```
 
-On first run Scriptorium creates `scriptorium.db`, seeds default settings, and
+On first run Scriptorium creates `scriptorium.db` through versioned migrations,
+seeds default settings, and
 locks the site behind a **one-page installer**. The console does not print a
 password:
 

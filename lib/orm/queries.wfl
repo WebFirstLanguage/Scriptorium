@@ -118,6 +118,24 @@ define action called orm_projection_sql with parameters model_spec and field_nam
     return join of projected and ", "
 end action
 
+// SQLite offers three aliases for its physical row identity. Choose one that
+// does not shadow a declared column; nullable logical keys need this identity
+// to distinguish multiple NULL-key rows in stable pages and bulk writes.
+define action called orm_rowid_name with parameters model_spec:
+    for each candidate_name in ["_rowid_" and "rowid" and "oid"]:
+        store available_name as yes
+        for each field_spec in model_spec.fields:
+            check if (to_lowercase of field_spec.field_name) is equal to candidate_name:
+                change available_name to no
+            end check
+        end for
+        check if available_name:
+            return candidate_name
+        end check
+    end for
+    call orm_fail with "row identity" and "all SQLite rowid aliases are shadowed; leave one of _rowid_, rowid, or oid undeclared"
+end action
+
 define action called orm_compile_select with parameters requested and result_kind:
     store valid as orm_require_model of requested.model_spec
     store page_valid as orm_page of requested and requested.page_limit and requested.page_offset
@@ -130,8 +148,12 @@ define action called orm_compile_select with parameters requested and result_kin
         check if result_kind is equal to "exists":
             change projection_sql to "1 AS orm_exists"
         otherwise:
-            check if result_kind is not equal to "records":
+            check if result_kind is equal to "row identity":
+                change projection_sql to (orm_quote of requested.model_spec.table_name) with "." with (orm_quote of (orm_rowid_name of requested.model_spec))
+            otherwise:
+                check if result_kind is not equal to "records":
                 call orm_fail with "query" and "unknown result kind"
+                end check
             end check
         end check
     end check
@@ -140,7 +162,7 @@ define action called orm_compile_select with parameters requested and result_kin
     for each bound_value in filter_sql.bound_values:
         push with bound_values and bound_value
     end for
-    check if result_kind is equal to "records":
+    check if result_kind is equal to "records" or result_kind is equal to "row identity":
         store ordering_parts as []
         store ordered_fields as []
         for each order_spec in requested.ordering:
@@ -163,6 +185,9 @@ define action called orm_compile_select with parameters requested and result_kin
         store key_spec as orm_primary_field of requested.model_spec
         check if (contains of ordered_fields and key_spec.field_name) is equal to no:
             push with ordering_parts and ((orm_quote of requested.model_spec.table_name) with "." with (orm_quote of key_spec.field_name) with " ASC")
+        end check
+        check if key_spec.nullable:
+            push with ordering_parts and ((orm_quote of requested.model_spec.table_name) with "." with (orm_quote of (orm_rowid_name of requested.model_spec)) with " ASC")
         end check
         change sql_text to sql_text with " ORDER BY " with (join of ordering_parts and ", ") with " LIMIT ? OFFSET ?"
         push with bound_values and requested.page_limit

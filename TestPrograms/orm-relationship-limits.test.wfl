@@ -1,0 +1,114 @@
+include from "../lib/orm/relationships.wfl"
+
+create new OrmField as key_spec:
+    field_name is "id"
+    value_type is "identity"
+    primary_key is yes
+end
+create new OrmField as name_spec:
+    field_name is "name"
+end
+create new OrmField as owner_spec:
+    field_name is "author_id"
+    value_type is "identity"
+    nullable is yes
+end
+create new OrmModel as authors:
+    table_name is "authors"
+    fields is [key_spec and name_spec]
+end
+create new OrmModel as notes:
+    table_name is "notes"
+    fields is [key_spec and owner_spec]
+end
+create new OrmRelationship as author_notes:
+    relation_name is "notes"
+    related_model is notes
+    local_field is "id"
+    related_field is "author_id"
+    many is yes
+end
+authors.relate(author_notes)
+create new OrmRelationship as note_author:
+    relation_name is "author"
+    related_model is authors
+    local_field is "author_id"
+    related_field is "id"
+end
+notes.relate(note_author)
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "orm-relationship-limits"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "limits.db"
+store fixture_session as orm_open of database_path
+store conn as fixture_session.connection
+try:
+    in transaction on conn:
+        call orm_sql_execute with fixture_session and "DROP TABLE IF EXISTS notes" and []
+        call orm_sql_execute with fixture_session and "DROP TABLE IF EXISTS authors" and []
+        call orm_sql_execute with fixture_session and "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL)" and []
+        call orm_sql_execute with fixture_session and "CREATE TABLE notes (id INTEGER PRIMARY KEY, author_id INTEGER)" and []
+        call orm_sql_execute with fixture_session and "INSERT INTO authors VALUES (1, 'one')" and []
+        call orm_sql_execute with fixture_session and "WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM n WHERE id < 10001) INSERT INTO notes SELECT id, 1 FROM n" and []
+    end transaction
+    describe "Relationship bounds":
+        test "more than one query page is fully loaded with a bounded query count":
+            store session as orm_borrow of conn
+            // Fixture reduction occurs transactionally, preserving the next case.
+            in transaction on conn:
+                call orm_sql_execute with session and "UPDATE notes SET author_id = 2 WHERE id > 1001" and []
+                store author_record as orm_find_key of session and authors and "1"
+                store before_queries as session.query_count
+                call orm_load with session and [author_record] and "notes"
+                expect session.query_count minus before_queries to equal 2
+                store loaded_notes as orm_related of author_record and "notes"
+                expect length of loaded_notes to equal 1001
+                expect orm_get of loaded_notes[1000] and "id" to equal "1001"
+                call orm_sql_execute with session and "UPDATE notes SET author_id = 1" and []
+            end transaction
+        end test
+        test "exceeding the eager limit fails without exposing a partial relationship":
+            store session as orm_borrow of conn
+            store author_record as orm_find_key of session and authors and "1"
+            store before_queries as session.query_count
+            store rejected as no
+            try:
+                call orm_load with session and [author_record] and "notes"
+            when error:
+                change rejected to yes
+                expect error_message contains "limited to 10000" to be yes
+            end try
+            expect rejected to be yes
+            expect session.query_count minus before_queries to equal 11
+            change rejected to no
+            try:
+                store incomplete as orm_related of author_record and "notes"
+            when error:
+                change rejected to yes
+                expect error_message contains "not loaded" to be yes
+            end try
+            expect rejected to be yes
+        end test
+        test "oversized parent batches fail before issuing a query":
+            store session as orm_borrow of conn
+            store author_record as orm_find_key of session and authors and "1"
+            store oversized as []
+            count from 1 to 1001:
+                push with oversized and author_record
+            end count
+            store before_queries as session.query_count
+            store rejected as no
+            try:
+                call orm_load with session and oversized and "notes"
+            when error:
+                change rejected to yes
+                expect error_message contains "at most 1000" to be yes
+            end try
+            expect rejected to be yes
+            expect session.query_count to equal before_queries
+        end test
+    end describe
+finally:
+    call orm_close with fixture_session
+    delete file at database_path
+end try

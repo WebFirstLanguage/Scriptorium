@@ -44,12 +44,19 @@ define action called orm_insert_mode with parameters session and record_value an
             change sql_text to sql_text with " DO UPDATE SET " with (join of updated_parts and ", ")
         end check
     end check
-    change sql_text to sql_text with " RETURNING " with (orm_projection_sql of model_spec and [])
+    store rowid_alias as "_orm_insert_rowid"
+    repeat while (orm_field_named of model_spec and rowid_alias) is not nothing:
+        change rowid_alias to rowid_alias with "_"
+    end repeat
+    change sql_text to sql_text with " RETURNING " with (orm_projection_sql of model_spec and []) with ", CAST(" with (orm_quote of (orm_rowid_name of model_spec)) with " AS TEXT) AS " with (orm_quote of rowid_alias)
     store native_rows as orm_read_sql of session and (orm_sql of sql_text and bound_values and "unknown")
     check if (length of native_rows) is equal to 0:
         return nothing
     end check
-    return orm_map_row of model_spec and native_rows[0]
+    store inserted_row as native_rows[0]
+    store saved as orm_map_row of model_spec and inserted_row
+    saved.remember_insert(inserted_row[rowid_alias])
+    return saved
 end action
 
 define action called orm_insert with parameters session and record_value:
@@ -116,13 +123,31 @@ define action called orm_write_selection with parameters requested:
         page_limit is requested.page_limit
         page_offset is requested.page_offset
     end
-    store selected_sql as orm_compile_select of selection and "records"
-    return orm_sql of ((orm_quote of key_spec.field_name) with " IN (" with selected_sql.sql_text with ")") and selected_sql.bound_values and filter_sql.constant_kind
+    store selection_kind as "records"
+    store selected_name as key_spec.field_name
+    check if key_spec.nullable:
+        change selection_kind to "row identity"
+        change selected_name to orm_rowid_name of requested.model_spec
+    end check
+    store selected_sql as orm_compile_select of selection and selection_kind
+    return orm_sql of ((orm_quote of selected_name) with " IN (" with selected_sql.sql_text with ")") and selected_sql.bound_values and filter_sql.constant_kind
 end action
 
 define action called orm_update with parameters session and requested and assignments:
     store draft as orm_record of requested.model_spec
     call orm_assign with draft and assignments
+    return orm_update_record of session and requested and draft
+end action
+
+// Trusted single-field counterpart to orm_set_sensitive. Callers authorize the
+// specific field/value; unrestricted query and primary-key guards still apply.
+define action called orm_update_sensitive with parameters session and requested and field_name and field_value:
+    store draft as orm_record of requested.model_spec
+    call orm_set_sensitive with draft and field_name and field_value
+    return orm_update_record of session and requested and draft
+end action
+
+define action called orm_update_record with parameters session and requested and draft:
     store key_spec as orm_primary_field of requested.model_spec
     store assignment_parts as []
     store bound_values as []

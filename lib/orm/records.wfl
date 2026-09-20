@@ -44,6 +44,12 @@ create container OrmRecord:
     property original_key defaults nothing
     // Read-only native projection for application compatibility adapters.
     property source_row defaults nothing
+    // Physical SQLite row identity returned by an INSERT, kept as exact text.
+    property inserted_rowid defaults nothing
+
+    action remember_insert needs rowid_value: Text:
+        change inserted_rowid to rowid_value
+    end
 
     action replace_values needs replacement: List:
         change assigned_values to replacement

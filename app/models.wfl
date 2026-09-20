@@ -1,0 +1,172 @@
+// Current application mapping. Historical migrations own their own immutable
+// definitions; changing this file never changes an applied migration.
+include from "migrations.wfl"
+
+define action called db_text_field with parameters field_name and nullable_value:
+    create new OrmField as field_spec:
+        field_name is field_name
+        value_type is "text"
+        nullable is nullable_value
+    end
+    return field_spec
+end action
+
+define action called db_default_text_field with parameters field_name and default_text:
+    create new OrmField as field_spec:
+        field_name is field_name
+        value_type is "text"
+        has_default is yes
+        default_value is default_text
+    end
+    return field_spec
+end action
+
+define action called db_timestamp_field with parameters field_name:
+    create new OrmField as field_spec:
+        field_name is field_name
+        value_type is "text"
+        nullable is yes
+        server_default is "current timestamp"
+    end
+    return field_spec
+end action
+
+define action called db_generated_key:
+    create new OrmField as field_spec:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    return field_spec
+end action
+
+define action called db_reference_field with parameters field_name and nullable_value:
+    create new OrmField as field_spec:
+        field_name is field_name
+        value_type is "identity"
+        nullable is nullable_value
+    end
+    return field_spec
+end action
+
+define action called db_users_model:
+    create new OrmField as username_spec:
+        field_name is "username"
+        unique_value is yes
+    end
+    create new OrmField as password_spec:
+        field_name is "password_hash"
+        sensitive is yes
+    end
+    create new OrmField as role_spec:
+        field_name is "role"
+        sensitive is yes
+        has_default is yes
+        default_value is "author"
+    end
+    create new OrmModel as model_spec:
+        table_name is "users"
+        fields is [(db_generated_key) and username_spec and password_spec and role_spec and (db_timestamp_field of "created_at")]
+    end
+    return model_spec
+end action
+
+define action called db_sessions_model:
+    // SQLite's historical text primary key permits null. This declaration keeps
+    // that stored-data contract; the authentication API still requires text IDs.
+    create new OrmField as session_key:
+        field_name is "id"
+        primary_key is yes
+        nullable is yes
+        sensitive is yes
+    end
+    create new OrmField as csrf_spec:
+        field_name is "csrf_token"
+        sensitive is yes
+        has_default is yes
+        default_value is ""
+    end
+    create new OrmModel as model_spec:
+        table_name is "sessions"
+        fields is [session_key and (db_reference_field of "user_id" and no) and (db_timestamp_field of "created_at") and (db_text_field of "expires_at" and no) and csrf_spec]
+    end
+    create new OrmRelationship as user_relation:
+        relation_name is "user"
+        related_model is db_users_model
+        local_field is "user_id"
+        related_field is "id"
+    end
+    model_spec.relate(user_relation)
+    return model_spec
+end action
+
+define action called db_content_model with parameters table_name:
+    create new OrmField as slug_spec:
+        field_name is "slug"
+        unique_value is yes
+    end
+    create new OrmModel as model_spec:
+        table_name is table_name
+        fields is [(db_generated_key) and slug_spec and (db_text_field of "title" and no) and (db_default_text_field of "body_markdown" and "") and (db_default_text_field of "status" and "draft") and (db_reference_field of "author_id" and yes) and (db_timestamp_field of "created_at") and (db_timestamp_field of "updated_at")]
+    end
+    create new OrmRelationship as author_relation:
+        relation_name is "author"
+        related_model is db_users_model
+        local_field is "author_id"
+        related_field is "id"
+    end
+    model_spec.relate(author_relation)
+    return model_spec
+end action
+
+define action called db_settings_model:
+    create new OrmField as setting_key:
+        field_name is "skey"
+        primary_key is yes
+        nullable is yes
+    end
+    create new OrmModel as model_spec:
+        table_name is "settings"
+        fields is [setting_key and (db_default_text_field of "svalue" and "")]
+    end
+    return model_spec
+end action
+
+define action called db_media_model:
+    create new OrmField as filename_spec:
+        field_name is "filename"
+        unique_value is yes
+    end
+    create new OrmField as size_spec:
+        field_name is "size"
+        value_type is "integer"
+        has_default is yes
+        default_value is 0
+    end
+    create new OrmModel as model_spec:
+        table_name is "media"
+        fields is [(db_generated_key) and filename_spec and (db_default_text_field of "original_name" and "") and (db_default_text_field of "content_type" and "") and size_spec and (db_reference_field of "uploader_id" and yes) and (db_timestamp_field of "created_at")]
+    end
+    create new OrmRelationship as uploader_relation:
+        relation_name is "uploader"
+        related_model is db_users_model
+        local_field is "uploader_id"
+        related_field is "id"
+    end
+    model_spec.relate(uploader_relation)
+    return model_spec
+end action
+
+define action called db_login_attempts_model:
+    create new OrmIndex as attempt_index:
+        index_name is "idx_login_attempts_ip_time"
+        field_names is ["ip" and "attempted_at"]
+    end
+    create new OrmModel as model_spec:
+        table_name is "login_attempts"
+        fields is [(db_generated_key) and (db_text_field of "ip" and no) and (db_timestamp_field of "attempted_at")]
+        indexes is [attempt_index]
+    end
+    return model_spec
+end action

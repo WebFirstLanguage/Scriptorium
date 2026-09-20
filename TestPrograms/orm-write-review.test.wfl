@@ -1,0 +1,84 @@
+include from "../app/db.wfl"
+
+define action called collision_model:
+    create new OrmField as key_spec:
+        field_name is "id"
+        nullable is yes
+        primary_key is yes
+    end
+    create new OrmModel as model_spec:
+        table_name is "review_aliases"
+        fields is [key_spec and (db_text_field of "_ROWID_" and no) and (db_text_field of "rowid" and no) and (db_text_field of "_orm_insert_rowid" and no) and (db_text_field of "note" and no)]
+    end
+    return model_spec
+end action
+
+describe "Independent row identity and sensitive write review":
+    test "declared aliases preserve real values and physical page selection":
+        open database at "sqlite::memory:" as conn
+        try:
+            store created as execute conn with "CREATE TABLE review_aliases (id TEXT PRIMARY KEY, _ROWID_ TEXT NOT NULL, rowid TEXT NOT NULL, _orm_insert_rowid TEXT NOT NULL, note TEXT NOT NULL)"
+            store session as orm_borrow of conn
+            store model_spec as call collision_model
+            count from 1 to 2:
+                store draft as orm_record of model_spec
+                call orm_assign with draft and [(orm_value of "id" and nothing) and (orm_value of "_ROWID_" and "logical first alias") and (orm_value of "rowid" and "logical second alias") and (orm_value of "_orm_insert_rowid" and "logical metadata field") and (orm_value of "note" and "tie")]
+                store saved as orm_insert of session and draft
+                expect saved.inserted_rowid to equal ("" with count)
+                expect orm_get of saved and "_ROWID_" to equal "logical first alias"
+                expect orm_get of saved and "rowid" to equal "logical second alias"
+                expect orm_get of saved and "_orm_insert_rowid" to equal "logical metadata field"
+            end count
+            store requested as orm_whole_table of (orm_query of model_spec)
+            call orm_page with requested and 1 and 1
+            store updated as orm_update of session and requested and [(orm_value of "note" and "updated")]
+            expect updated["affected_rows"] to equal 1
+            store actual_rows as query conn with "SELECT note FROM review_aliases ORDER BY oid"
+            store first_value as actual_rows[0]
+            store second_value as actual_rows[1]
+            expect first_value["note"] to equal "tie"
+            expect second_value["note"] to equal "updated"
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "sensitive bulk counterpart keeps assignment and query guards":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call user_create with conn and "reviewer" and "synthetic hash" and "author"
+            store session as orm_borrow of conn
+            store requested as orm_query of (db_users_model)
+            store rejected as 0
+            try:
+                store bad_value as orm_update_sensitive of session and requested and "role" and "admin"
+            when error:
+                change rejected to rejected plus 1
+            end try
+            call orm_where with requested and (orm_compare of "id" and "equal" and "1")
+            try:
+                store bad_value as orm_update_sensitive of session and requested and "id" and "2"
+            when error:
+                change rejected to rejected plus 1
+            end try
+            try:
+                store bad_value as orm_update_sensitive of session and requested and "role" and 42
+            when error:
+                change rejected to rejected plus 1
+            end try
+            expect rejected to equal 3
+            store user_row as user_by_id of conn and 1
+            expect user_row["role"] to equal "author"
+            expect user_by_id of conn and 2 to equal nothing
+            store literal_value as "admin', password_hash='injected"
+            store changed_value as orm_update_sensitive of session and requested and "role" and literal_value
+            store after_row as user_by_id of conn and 1
+            expect changed_value["affected_rows"] to equal 1
+            expect after_row["role"] to equal literal_value
+            expect after_row["password_hash"] to equal "synthetic hash"
+        finally:
+            close database conn
+        end try
+    end test
+end describe

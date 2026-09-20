@@ -1,8 +1,9 @@
 # ORM implementation evidence
 
 This is an incremental engineering record, not a completion or release claim.
-Application integration, migration lifecycle, the WFL-only runner conversion,
-full HTTP/recovery coverage and final Scriptorium CI remain in progress.
+Application integration and the WFL-only runner conversion are implemented.
+Migration recovery expansion, review fixes and final Scriptorium CI remain in
+progress; this record is not a completion claim.
 
 ## Implemented library contracts
 
@@ -51,13 +52,23 @@ capability and provenance evidence remains in `runtime-capabilities.md`.
 | `orm-models.test.wfl` | 5 passed | Duplicate identifiers, indexes, relationship uniqueness and model isolation |
 | `orm-records.test.wfl` | 5 passed | Missing/null/empty, atomic assignment, sensitive fields, redacted errors |
 | `orm-predicates.test.wfl` | 7 passed | File-backed injection, Boolean/null/membership semantics and literal wildcard searches |
-| `orm-crud.test.wfl` | 9 passed | Defaults, exact generated IDs, projections, upserts, paging, guarded writes, native rollback and ownership |
+| `orm-crud.test.wfl` | 10 passed | Defaults, exact generated IDs, projections, upserts, paging, guarded writes, native and nested rollback, connection reuse and ownership |
 | `orm-query-order.test.wfl` | 1 passed | Numeric ordering with exact-text identity projection |
 | `orm-relationships.test.wfl` | 3 passed | Two SQL queries for 101 parent keys, explicit loading, null/orphan results and no lazy queries |
 
-The relationship suite passed before adding the explicit 10000-row eager-load
-guard; the guard's boundary coverage is still pending. This record will be
-updated with the complete suite and final reviewed revision.
+| `orm-relationship-limits.test.wfl` | 3 passed | 1001 children take two queries; 10001 fail without partial state; 1001 parents fail before SQL |
+| `db-contracts.test.wfl` | 5 passed | Legacy result behavior, exact large IDs and atomic installer rollback |
+| `db-review-contracts.test.wfl` | 8 passed | Independent NULL lookup, mutation metadata and nullable-key page regressions |
+
+The executable progression in `examples/orm/progression.test.wfl` passes three
+cases using explicit migrations from the first saved record through composed
+queries, transactions, relationship loading and reversible index changes.
+The combined candidate is `ae5395d9`, executable SHA256
+`76f612ca1bbaf4484b2cc2bda86d876588bc765de9c38b7daa8951bad143b911`.
+All 16 existing database cases, three authentication cases and six rendering
+cases pass. The HTTP reviewer records 11/11 against the integrated application
+in `tests/integration/EVIDENCE.md`; the subsequent review fixes require the final
+complete-suite rerun.
 
 ### Retained regression chronology
 
@@ -72,6 +83,12 @@ updated with the complete suite and final reviewed revision.
   table column passes the unchanged order assertions.
 - Record error assertions fail against the official runtime because the
   required application error primitive is absent; they pass with the candidate.
+- `ffeebbb` preserves large-ID rounding (expected exact text, actual rounded
+  Number) and partial installer state (expected zero users, actual one) before
+  replacing the application data layer; both now pass.
+- `c0d0603` preserves independent review's seven failures plus a passing NULL
+  session guard. Physical row identity, explicit trusted updates and legacy
+  NULL-equality adaptation pass the unchanged eight assertions.
 
 ### Timing and fixture isolation
 

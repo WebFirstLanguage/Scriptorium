@@ -1,0 +1,273 @@
+// Compatibility adapters keep the existing application's map projections and
+// ordinary numeric IDs. The reusable ORM always treats identities as exact text.
+include from "models.wfl"
+
+define action called db_identity with parameters raw_identity:
+    check if isnothing of raw_identity:
+        return nothing
+    end check
+    store identity_text as raw_identity
+    check if (typeof of raw_identity) is equal to "Number":
+        check if raw_identity is less than -9007199254740991 or raw_identity is greater than 9007199254740991 or (floor of raw_identity) is not equal to raw_identity:
+            call orm_fail with "application identity" and "use exact integer text for identifiers outside the safe numeric range"
+        end check
+        change identity_text to "" with raw_identity
+    end check
+    store problem_text as orm_identity_problem of identity_text
+    check if problem_text is not equal to "":
+        call orm_fail with "application identity" and problem_text
+    end check
+    return identity_text
+end action
+
+define action called db_legacy_identity with parameters identity_text:
+    check if isnothing of identity_text:
+        return nothing
+    end check
+    store magnitude as identity_text
+    check if (substring of magnitude and 0 and 1) is equal to "-":
+        change magnitude to substring of magnitude and 1 and ((length of magnitude) minus 1)
+    end check
+    check if (orm_decimal_exceeds of magnitude and "9007199254740991") is equal to no:
+        return parse_json of identity_text
+    end check
+    return identity_text
+end action
+
+// Preserve the old route fallback while avoiding floating-point parsing of IDs.
+define action called db_route_identity with parameters identity_text:
+    check if (orm_identity_problem of identity_text) is not equal to "":
+        return 0
+    end check
+    return db_legacy_identity of identity_text
+end action
+
+define action called db_lookup with parameters model_spec and field_name and field_value:
+    store requested as orm_query of model_spec
+    // Compatibility wrappers historically used "= ?" (SQL NULL never matches).
+    // The reusable ORM deliberately gives explicit NULL equality IS NULL meaning.
+    check if field_value is nothing:
+        call orm_where with requested and (orm_any of [])
+        return requested
+    end check
+    call orm_where with requested and (orm_compare of field_name and "equal" and field_value)
+    return requested
+end action
+
+define action called db_insert_result with parameters saved:
+    create map result_value:
+        "affected_rows" is 1
+        "last_insert_id" is db_legacy_identity of saved.inserted_rowid
+    end map
+    return result_value
+end action
+
+// These are the only application SQL-clock exceptions. SQLite remains the time
+// authority; ordinary row reads/writes still use model queries and records.
+define action called db_clock with parameters conn and modifier:
+    store session as orm_borrow of conn
+    store native_rows as orm_sql_query of session and "SELECT datetime('now', ?) AS timestamp_value" and [modifier]
+    store native_row as native_rows[0]
+    return native_row["timestamp_value"]
+end action
+
+define action called db_current_year with parameters conn:
+    store session as orm_borrow of conn
+    store native_rows as orm_sql_query of session and "SELECT strftime('%Y','now') AS year_value" and []
+    store native_row as native_rows[0]
+    return native_row["year_value"]
+end action
+
+// Legacy list wrappers return their full requested window, using bounded ORM
+// pages internally. Negative limit retains SQLite's historical unlimited form;
+// application code uses explicit positive limits or -1 for its existing lists.
+define action called db_read_records with parameters session and requested and wanted_count and offset_value and relation_name:
+    check if (typeof of wanted_count) is not equal to "Number" or (typeof of offset_value) is not equal to "Number":
+        call orm_fail with "application page" and "limit and offset must be whole numbers"
+    end check
+    check if (floor of wanted_count) is not equal to wanted_count or (floor of offset_value) is not equal to offset_value:
+        call orm_fail with "application page" and "limit and offset must be whole numbers"
+    end check
+    store next_offset as offset_value
+    check if next_offset is less than 0:
+        change next_offset to 0
+    end check
+    store collected as []
+    store remaining as wanted_count
+    store has_more as wanted_count is not equal to 0
+    repeat while has_more:
+        store batch_limit as 1000
+        check if remaining is greater than 0 and remaining is less than batch_limit:
+            change batch_limit to remaining
+        end check
+        call orm_page with requested and batch_limit and next_offset
+        store page_records as orm_find of session and requested
+        check if relation_name is not equal to "":
+            call orm_load with session and page_records and relation_name
+        end check
+        for each record_value in page_records:
+            push with collected and record_value
+        end for
+        change next_offset to next_offset plus batch_limit
+        check if remaining is greater than 0:
+            change remaining to remaining minus batch_limit
+        end check
+        change has_more to (length of page_records) is equal to batch_limit and remaining is not equal to 0
+    end repeat
+    return collected
+end action
+
+define action called db_delete_matching with parameters session and requested:
+    call orm_page with requested and 1000 and 0
+    store affected_total as 0
+    store last_identity as 0
+    store has_more as yes
+    repeat while has_more:
+        store result_value as orm_delete of session and requested
+        change affected_total to affected_total plus result_value["affected_rows"]
+        change last_identity to result_value["last_insert_id"]
+        change has_more to result_value["affected_rows"] is equal to 1000
+    end repeat
+    create map combined_result:
+        "affected_rows" is affected_total
+        "last_insert_id" is last_identity
+    end map
+    return combined_result
+end action
+
+define action called db_user_map with parameters record_value and include_hash:
+    check if record_value is nothing:
+        return nothing
+    end check
+    check if include_hash:
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "username" is orm_get of record_value and "username"
+            "password_hash" is orm_get of record_value and "password_hash"
+            "role" is orm_get of record_value and "role"
+            "created_at" is orm_get of record_value and "created_at"
+        end map
+        return mapped
+    end check
+    create map mapped:
+        "id" is db_legacy_identity of (orm_get of record_value and "id")
+        "username" is orm_get of record_value and "username"
+        "role" is orm_get of record_value and "role"
+        "created_at" is orm_get of record_value and "created_at"
+    end map
+    return mapped
+end action
+
+define action called db_related_username with parameters record_value and relation_name:
+    store related_record as orm_related of record_value and relation_name
+    check if related_record is nothing:
+        return nothing
+    end check
+    return orm_get of related_record and "username"
+end action
+
+define action called db_post_map with parameters record_value and projection_kind:
+    check if record_value is nothing:
+        return nothing
+    end check
+    store author_name as db_related_username of record_value and "author"
+    check if projection_kind is equal to "published":
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "slug" is orm_get of record_value and "slug"
+            "title" is orm_get of record_value and "title"
+            "body_markdown" is orm_get of record_value and "body_markdown"
+            "status" is orm_get of record_value and "status"
+            "created_at" is orm_get of record_value and "created_at"
+            "author_name" is author_name
+        end map
+        return mapped
+    end check
+    check if projection_kind is equal to "admin":
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "slug" is orm_get of record_value and "slug"
+            "title" is orm_get of record_value and "title"
+            "status" is orm_get of record_value and "status"
+            "author_id" is db_legacy_identity of (orm_get of record_value and "author_id")
+            "updated_at" is orm_get of record_value and "updated_at"
+            "author_name" is author_name
+        end map
+        return mapped
+    end check
+    create map mapped:
+        "id" is db_legacy_identity of (orm_get of record_value and "id")
+        "slug" is orm_get of record_value and "slug"
+        "title" is orm_get of record_value and "title"
+        "body_markdown" is orm_get of record_value and "body_markdown"
+        "status" is orm_get of record_value and "status"
+        "author_id" is db_legacy_identity of (orm_get of record_value and "author_id")
+        "created_at" is orm_get of record_value and "created_at"
+        "updated_at" is orm_get of record_value and "updated_at"
+        "author_name" is author_name
+    end map
+    return mapped
+end action
+
+define action called db_page_map with parameters record_value and projection_kind:
+    check if record_value is nothing:
+        return nothing
+    end check
+    check if projection_kind is equal to "navigation":
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "slug" is orm_get of record_value and "slug"
+            "title" is orm_get of record_value and "title"
+        end map
+        return mapped
+    end check
+    check if projection_kind is equal to "admin":
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "slug" is orm_get of record_value and "slug"
+            "title" is orm_get of record_value and "title"
+            "status" is orm_get of record_value and "status"
+            "updated_at" is orm_get of record_value and "updated_at"
+        end map
+        return mapped
+    end check
+    create map mapped:
+        "id" is db_legacy_identity of (orm_get of record_value and "id")
+        "slug" is orm_get of record_value and "slug"
+        "title" is orm_get of record_value and "title"
+        "body_markdown" is orm_get of record_value and "body_markdown"
+        "status" is orm_get of record_value and "status"
+        "author_id" is db_legacy_identity of (orm_get of record_value and "author_id")
+        "updated_at" is orm_get of record_value and "updated_at"
+    end map
+    return mapped
+end action
+
+define action called db_media_map with parameters record_value and include_uploader:
+    check if record_value is nothing:
+        return nothing
+    end check
+    check if include_uploader:
+        create map mapped:
+            "id" is db_legacy_identity of (orm_get of record_value and "id")
+            "filename" is orm_get of record_value and "filename"
+            "original_name" is orm_get of record_value and "original_name"
+            "content_type" is orm_get of record_value and "content_type"
+            "size" is orm_get of record_value and "size"
+            "uploader_id" is db_legacy_identity of (orm_get of record_value and "uploader_id")
+            "created_at" is orm_get of record_value and "created_at"
+            "uploader_name" is db_related_username of record_value and "uploader"
+        end map
+        return mapped
+    end check
+    create map mapped:
+        "id" is db_legacy_identity of (orm_get of record_value and "id")
+        "filename" is orm_get of record_value and "filename"
+        "original_name" is orm_get of record_value and "original_name"
+        "content_type" is orm_get of record_value and "content_type"
+        "size" is orm_get of record_value and "size"
+        "uploader_id" is db_legacy_identity of (orm_get of record_value and "uploader_id")
+        "created_at" is orm_get of record_value and "created_at"
+    end map
+    return mapped
+end action

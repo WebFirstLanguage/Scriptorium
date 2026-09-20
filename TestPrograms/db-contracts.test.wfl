@@ -3,7 +3,8 @@ include from "../app/db.wfl"
 
 store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "db-contracts"
 create directory at artifact_dir
-store database_path as path_join of artifact_dir and "contracts.db"
+store database_id as call generate_uuid
+store database_path as path_join of artifact_dir and (database_id with ".db")
 open database at ("sqlite://" with database_path) as conn
 call db_migrate with conn
 
@@ -93,4 +94,5 @@ try:
     end describe
 finally:
     close database conn
+    delete file at database_path
 end try

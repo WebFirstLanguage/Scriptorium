@@ -32,9 +32,7 @@ end action
 // Expiry (7 days) is computed in SQL so we don't depend on WFL date formatting.
 define action called session_start with parameters conn and user_id:
     store sid as new_session_id
-    store exp_rows as query conn with "SELECT datetime('now', '+7 days') AS exp"
-    store exp_row as exp_rows[0]
-    store expires_at as exp_row["exp"]
+    store expires_at as db_clock of conn and "+7 days"
     store csrf as generate_csrf_token
     store created as session_create of conn and sid and user_id and expires_at and csrf
     return sid

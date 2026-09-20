@@ -538,7 +538,7 @@ define action called handle_post_create with parameters db and req and req_body 
 end action
 
 define action called handle_post_edit with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store post_row as post_by_id of db and the_id
     check if post_row is nothing:
         call handle_404 with db and req and user
@@ -554,7 +554,7 @@ define action called handle_post_edit with parameters db and req and user and id
 end action
 
 define action called handle_post_update with parameters db and req and req_body and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store post_row as post_by_id of db and the_id
     check if post_row is nothing:
         call handle_404 with db and req and user
@@ -580,7 +580,7 @@ define action called handle_post_update with parameters db and req and req_body 
 end action
 
 define action called handle_post_delete with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store post_row as post_by_id of db and the_id
     check if post_row is nothing:
         call handle_404 with db and req and user
@@ -680,7 +680,7 @@ define action called handle_page_create with parameters db and req and req_body 
 end action
 
 define action called handle_page_edit with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store page_row as page_by_id of db and the_id
     check if page_row is nothing:
         call handle_404 with db and req and user
@@ -696,7 +696,7 @@ define action called handle_page_edit with parameters db and req and user and id
 end action
 
 define action called handle_page_update with parameters db and req and req_body and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store page_row as page_by_id of db and the_id
     check if page_row is nothing:
         call handle_404 with db and req and user
@@ -722,7 +722,7 @@ define action called handle_page_update with parameters db and req and req_body 
 end action
 
 define action called handle_page_delete with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store page_row as page_by_id of db and the_id
     check if page_row is nothing:
         call handle_404 with db and req and user
@@ -826,7 +826,7 @@ define action called handle_user_create with parameters db and req and req_body 
 end action
 
 define action called handle_user_edit with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store edit_user as user_by_id of db and the_id
     check if edit_user is nothing:
         call send_text_status with req and "User not found" and 404
@@ -839,7 +839,7 @@ define action called handle_user_edit with parameters db and req and user and id
 end action
 
 define action called handle_user_update with parameters db and req and req_body and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store edit_user as user_by_id of db and the_id
     check if edit_user is nothing:
         call send_text_status with req and "User not found" and 404
@@ -861,7 +861,7 @@ define action called handle_user_update with parameters db and req and req_body 
 end action
 
 define action called handle_user_delete with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     check if user["id"] is equal to the_id:
         call send_text_status with req and "You cannot delete your own account." and 400
         return yes
@@ -1035,7 +1035,7 @@ define action called handle_media_upload with parameters db and req and user:
 end action
 
 define action called handle_media_delete with parameters db and req and user and id_text:
-    store the_id as to_int of id_text and 0
+    store the_id as db_route_identity of id_text
     store media_row as media_by_id of db and the_id
     check if media_row is nothing:
         call handle_404 with db and req and user

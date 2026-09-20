@@ -1,47 +1,11 @@
-// Scriptorium — data layer.
-//
-// Owns the SQLite schema and every query/execute the app makes. Callers pass in
-// the open connection handle (`conn`) so this file stays free of global state and
-// is easy to unit-test against `sqlite::memory:`.
-//
-// Timestamps are filled by SQLite itself (DEFAULT (datetime('now')) and explicit
-// datetime('now') in updates) so we never depend on WFL date formatting.
-//
-// Dependency chain:  db -> util
-include from "util.wfl"
+// Compatibility API: models own row access; migrations own schema.
+// The caller owns its native connection.
+include from "persistence-helpers.wfl"
 
-// ---------------------------------------------------------------------------
-// Schema — idempotent. Safe to run on every boot (no migration engine in WFL).
-// ---------------------------------------------------------------------------
 define action called db_migrate with parameters conn:
-    store r1 as execute conn with "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at TEXT DEFAULT (datetime('now')))"
-    store r2 as execute conn with "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL, csrf_token TEXT NOT NULL DEFAULT '')"
-    store r3 as execute conn with "CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
-    store r4 as execute conn with "CREATE TABLE IF NOT EXISTS pages (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))"
-    store r5 as execute conn with "CREATE TABLE IF NOT EXISTS settings (skey TEXT PRIMARY KEY, svalue TEXT NOT NULL DEFAULT '')"
-    store r6 as execute conn with "CREATE TABLE IF NOT EXISTS media (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT UNIQUE NOT NULL, original_name TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0, uploader_id INTEGER, created_at TEXT DEFAULT (datetime('now')))"
-    store r7 as execute conn with "CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, attempted_at TEXT DEFAULT (datetime('now')))"
-    // The rate limiter filters on (ip, attempted_at) on every login POST —
-    // exactly when the table is growing fastest — so keep that path indexed.
-    store r7b as execute conn with "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"
-    // Databases created before the CSRF work lack sessions.csrf_token. SQLite
-    // has no ADD COLUMN IF NOT EXISTS, so ask the schema whether the column is
-    // there and only ALTER when it is missing.
-    //
-    // This deliberately does NOT wrap the ALTER in a `try`. Catching every error
-    // would treat "column already exists" and "database is locked / read-only"
-    // identically, so migration would report success on a database it had failed
-    // to upgrade — and the failure would resurface later as session_create
-    // blowing up on a missing csrf_token column, far from the cause.
-    store csrf_cols as query conn with "SELECT count(*) AS n FROM pragma_table_info('sessions') WHERE name = 'csrf_token'"
-    store csrf_col_row as csrf_cols[0]
-    check if csrf_col_row["n"] is equal to 0:
-        store r8 as execute conn with "ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''"
-    end check
-    return yes
+    return scriptorium_migrate of conn
 end action
 
-// first_row: return row 0 of a result list, or nothing when empty.
 define action called first_row with parameters rows:
     check if (length of rows) is greater than 0:
         return rows[0]
@@ -49,38 +13,33 @@ define action called first_row with parameters rows:
     return nothing
 end action
 
-// ---------------------------------------------------------------------------
-// Settings — a simple key/value store.
-// ---------------------------------------------------------------------------
 define action called setting_get with parameters conn and setting_key and fallback:
-    store rows as query conn with "SELECT svalue FROM settings WHERE skey = ?" and parameters [setting_key]
-    store row0 as first_row of rows
-    check if row0 is nothing:
+    check if setting_key is nothing:
         return fallback
     end check
-    return row0["svalue"]
+    store record_value as orm_find_key of (orm_borrow of conn) and (db_settings_model) and setting_key
+    check if record_value is nothing:
+        return fallback
+    end check
+    return orm_get of record_value and "svalue"
 end action
 
 define action called setting_set with parameters conn and setting_key and setting_value:
-    store r as execute conn with "INSERT INTO settings (skey, svalue) VALUES (?, ?) ON CONFLICT(skey) DO UPDATE SET svalue = ?" and parameters [setting_key and setting_value and setting_value]
+    store record_value as orm_record of (db_settings_model)
+    call orm_assign with record_value and [(orm_value of "skey" and setting_key) and (orm_value of "svalue" and setting_value)]
+    store saved as orm_upsert of (orm_borrow of conn) and record_value and "skey"
     return yes
 end action
 
-// Insert a default only if the key is absent (used at seed time).
 define action called setting_default with parameters conn and setting_key and setting_value:
-    store r as execute conn with "INSERT OR IGNORE INTO settings (skey, svalue) VALUES (?, ?)" and parameters [setting_key and setting_value]
+    store record_value as orm_record of (db_settings_model)
+    call orm_assign with record_value and [(orm_value of "skey" and setting_key) and (orm_value of "svalue" and setting_value)]
+    store saved as orm_insert_if_absent of (orm_borrow of conn) and record_value and "skey"
     return yes
 end action
 
-// ---------------------------------------------------------------------------
-// First-run installer lock (`settings.installed` = "yes").
-// ---------------------------------------------------------------------------
 define action called install_is_done with parameters conn:
-    store flag as setting_get of conn and "installed" and ""
-    check if flag is equal to "yes":
-        return yes
-    end check
-    return no
+    return (setting_get of conn and "installed" and "") is equal to "yes"
 end action
 
 define action called install_mark_done with parameters conn:
@@ -88,233 +47,296 @@ define action called install_mark_done with parameters conn:
     return yes
 end action
 
-// Create the first admin, write site title/tagline, then lock the wizard.
-// Unique-username failure (and any other user_create error) returns no and
-// leaves settings and the installed flag untouched.
+// A rejected first user returns false as before. Later failures propagate only
+// after the transaction has rolled back both the user and installation settings.
 define action called install_apply with parameters conn and site_title and site_tagline and username and password_hash:
-    store applied as yes
+    store creating_user as yes
     try:
-        call user_create with conn and username and password_hash and "admin"
+        in transaction on conn:
+            check if (install_is_done of conn) or (user_count of conn) is greater than 0:
+                call orm_fail with "installation" and "the site already has an administrator; use normal administration"
+            end check
+            call user_create with conn and username and password_hash and "admin"
+            change creating_user to no
+            call setting_set with conn and "site_title" and site_title
+            call setting_set with conn and "site_tagline" and site_tagline
+            call install_mark_done with conn
+        end transaction
     when error:
-        change applied to no
+        check if creating_user:
+            return no
+        end check
+        call raise_error with error_message
     end try
-    check if applied is equal to no:
-        return no
-    end check
-    call setting_set with conn and "site_title" and site_title
-    call setting_set with conn and "site_tagline" and site_tagline
-    call install_mark_done with conn
     return yes
 end action
 
-// ---------------------------------------------------------------------------
-// Users
-// ---------------------------------------------------------------------------
 define action called user_count with parameters conn:
-    store rows as query conn with "SELECT count(*) AS n FROM users"
-    store row0 as rows[0]
-    return row0["n"]
+    return orm_count of (orm_borrow of conn) and (orm_query of (db_users_model))
 end action
 
 define action called user_create with parameters conn and username and password_hash and role_name:
-    return execute conn with "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)" and parameters [username and password_hash and role_name]
+    store record_value as orm_record of (db_users_model)
+    call orm_set with record_value and "username" and username
+    call orm_set_sensitive with record_value and "password_hash" and password_hash
+    call orm_set_sensitive with record_value and "role" and role_name
+    return db_insert_result of (orm_save of (orm_borrow of conn) and record_value)
 end action
 
 define action called user_by_username with parameters conn and username:
-    store rows as query conn with "SELECT id, username, password_hash, role, created_at FROM users WHERE username = ?" and parameters [username]
-    return first_row of rows
+    store requested as db_lookup of (db_users_model) and "username" and username
+    return db_user_map of (orm_first of (orm_borrow of conn) and requested) and yes
 end action
 
 define action called user_by_id with parameters conn and the_id:
-    store rows as query conn with "SELECT id, username, password_hash, role, created_at FROM users WHERE id = ?" and parameters [the_id]
-    return first_row of rows
+    return db_user_map of (orm_find_key of (orm_borrow of conn) and (db_users_model) and (db_identity of the_id)) and yes
 end action
 
 define action called user_list with parameters conn:
-    store rows as query conn with "SELECT id, username, role, created_at FROM users ORDER BY id"
-    return rows
+    store requested as orm_query of (db_users_model)
+    call orm_select with requested and ["id" and "username" and "role" and "created_at"]
+    call orm_order_by with requested and "id" and "ascending"
+    store records as db_read_records of (orm_borrow of conn) and requested and -1 and 0 and ""
+    store mapped_rows as []
+    for each record_value in records:
+        push with mapped_rows and (db_user_map of record_value and no)
+    end for
+    return mapped_rows
+end action
+
+define action called db_user_sensitive_update with parameters conn and the_id and field_name and field_value:
+    store session as orm_borrow of conn
+    store requested as db_lookup of (db_users_model) and "id" and (db_identity of the_id)
+    return orm_update_sensitive of session and requested and field_name and field_value
 end action
 
 define action called user_set_role with parameters conn and the_id and role_name:
-    return execute conn with "UPDATE users SET role = ? WHERE id = ?" and parameters [role_name and the_id]
+    return db_user_sensitive_update of conn and the_id and "role" and role_name
 end action
 
 define action called user_set_password with parameters conn and the_id and password_hash:
-    return execute conn with "UPDATE users SET password_hash = ? WHERE id = ?" and parameters [password_hash and the_id]
+    return db_user_sensitive_update of conn and the_id and "password_hash" and password_hash
 end action
 
 define action called user_delete with parameters conn and the_id:
-    return execute conn with "DELETE FROM users WHERE id = ?" and parameters [the_id]
+    return orm_delete of (orm_borrow of conn) and (db_lookup of (db_users_model) and "id" and (db_identity of the_id))
 end action
 
-// ---------------------------------------------------------------------------
-// Sessions
-// ---------------------------------------------------------------------------
 define action called session_create with parameters conn and session_id and user_id and expires_at and csrf_token:
-    return execute conn with "INSERT INTO sessions (id, user_id, expires_at, csrf_token) VALUES (?, ?, ?, ?)" and parameters [session_id and user_id and expires_at and csrf_token]
+    store record_value as orm_record of (db_sessions_model)
+    call orm_set_sensitive with record_value and "id" and session_id
+    call orm_set_sensitive with record_value and "csrf_token" and csrf_token
+    call orm_assign with record_value and [(orm_value of "user_id" and (db_identity of user_id)) and (orm_value of "expires_at" and expires_at)]
+    store saved as orm_save of (orm_borrow of conn) and record_value
+    return db_insert_result of saved
 end action
 
-// Returns the joined user row for a live (non-expired) session, or nothing.
-// Carries the session's csrf_token so handlers can validate POSTed forms.
 define action called session_user with parameters conn and session_id:
-    store rows as query conn with "SELECT u.id AS id, u.username AS username, u.role AS role, s.csrf_token AS csrf_token FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > datetime('now')" and parameters [session_id]
-    return first_row of rows
+    check if session_id is nothing:
+        return nothing
+    end check
+    store session as orm_borrow of conn
+    store requested as orm_query of (db_sessions_model)
+    call orm_where with requested and (orm_all of [(orm_compare of "id" and "equal" and session_id) and (orm_compare of "expires_at" and "greater than" and (db_clock of conn and "+0 seconds"))])
+    store session_record as orm_first of session and requested
+    check if session_record is nothing:
+        return nothing
+    end check
+    call orm_load with session and [session_record] and "user"
+    store user_record as orm_related of session_record and "user"
+    check if user_record is nothing:
+        return nothing
+    end check
+    create map result_value:
+        "id" is db_legacy_identity of (orm_get of user_record and "id")
+        "username" is orm_get of user_record and "username"
+        "role" is orm_get of user_record and "role"
+        "csrf_token" is orm_get of session_record and "csrf_token"
+    end map
+    return result_value
 end action
 
 define action called session_delete with parameters conn and session_id:
-    return execute conn with "DELETE FROM sessions WHERE id = ?" and parameters [session_id]
+    return db_delete_matching of (orm_borrow of conn) and (db_lookup of (db_sessions_model) and "id" and session_id)
 end action
 
 define action called session_purge_expired with parameters conn:
-    return execute conn with "DELETE FROM sessions WHERE expires_at <= datetime('now')"
+    store requested as orm_query of (db_sessions_model)
+    call orm_where with requested and (orm_compare of "expires_at" and "less or equal" and (db_clock of conn and "+0 seconds"))
+    return db_delete_matching of (orm_borrow of conn) and requested
 end action
 
-// ---------------------------------------------------------------------------
-// Login attempts — per-IP failure log backing the login rate limiter.
-// Timestamps and the window are SQL-side (datetime('now')) like everything else.
-// ---------------------------------------------------------------------------
 define action called login_attempt_record with parameters conn and ip:
-    return execute conn with "INSERT INTO login_attempts (ip) VALUES (?)" and parameters [ip]
+    store record_value as orm_record of (db_login_attempts_model)
+    call orm_set with record_value and "ip" and ip
+    return db_insert_result of (orm_save of (orm_borrow of conn) and record_value)
 end action
 
-// Failed attempts from this IP in the last 15 minutes.
 define action called login_attempts_recent with parameters conn and ip:
-    store rows as query conn with "SELECT count(*) AS n FROM login_attempts WHERE ip = ? AND attempted_at > datetime('now', '-15 minutes')" and parameters [ip]
-    store row0 as rows[0]
-    return row0["n"]
+    store requested as orm_query of (db_login_attempts_model)
+    call orm_where with requested and (orm_all of [(orm_compare of "ip" and "equal" and ip) and (orm_compare of "attempted_at" and "greater than" and (db_clock of conn and "-15 minutes"))])
+    return orm_count of (orm_borrow of conn) and requested
 end action
 
-// A successful login wipes the counter for that IP.
 define action called login_attempts_clear with parameters conn and ip:
-    return execute conn with "DELETE FROM login_attempts WHERE ip = ?" and parameters [ip]
+    return db_delete_matching of (orm_borrow of conn) and (db_lookup of (db_login_attempts_model) and "ip" and ip)
 end action
 
-// Housekeeping: drop attempts too old to ever count against the window.
 define action called login_attempts_purge with parameters conn:
-    return execute conn with "DELETE FROM login_attempts WHERE attempted_at <= datetime('now', '-15 minutes')"
+    store requested as orm_query of (db_login_attempts_model)
+    call orm_where with requested and (orm_compare of "attempted_at" and "less or equal" and (db_clock of conn and "-15 minutes"))
+    return db_delete_matching of (orm_borrow of conn) and requested
 end action
 
-// ---------------------------------------------------------------------------
-// Media — uploaded files; the bytes live under static/uploads/, rows here.
-// ---------------------------------------------------------------------------
 define action called media_create with parameters conn and filename and original_name and content_type and size and uploader_id:
-    return execute conn with "INSERT INTO media (filename, original_name, content_type, size, uploader_id) VALUES (?, ?, ?, ?, ?)" and parameters [filename and original_name and content_type and size and uploader_id]
+    store record_value as orm_record of (db_media_model)
+    call orm_assign with record_value and [(orm_value of "filename" and filename) and (orm_value of "original_name" and original_name) and (orm_value of "content_type" and content_type) and (orm_value of "size" and size) and (orm_value of "uploader_id" and (db_identity of uploader_id))]
+    return db_insert_result of (orm_save of (orm_borrow of conn) and record_value)
 end action
 
 define action called media_list_all with parameters conn:
-    store rows as query conn with "SELECT m.id AS id, m.filename AS filename, m.original_name AS original_name, m.content_type AS content_type, m.size AS size, m.uploader_id AS uploader_id, m.created_at AS created_at, u.username AS uploader_name FROM media m LEFT JOIN users u ON u.id = m.uploader_id ORDER BY m.created_at DESC, m.id DESC"
-    return rows
+    store requested as orm_query of (db_media_model)
+    call orm_order_by with requested and "created_at" and "descending"
+    call orm_order_by with requested and "id" and "descending"
+    store records as db_read_records of (orm_borrow of conn) and requested and -1 and 0 and "uploader"
+    store mapped_rows as []
+    for each record_value in records:
+        push with mapped_rows and (db_media_map of record_value and yes)
+    end for
+    return mapped_rows
 end action
 
 define action called media_by_id with parameters conn and the_id:
-    store rows as query conn with "SELECT id, filename, original_name, content_type, size, uploader_id, created_at FROM media WHERE id = ?" and parameters [the_id]
-    return first_row of rows
+    return db_media_map of (orm_find_key of (orm_borrow of conn) and (db_media_model) and (db_identity of the_id)) and no
 end action
 
 define action called media_delete with parameters conn and the_id:
-    return execute conn with "DELETE FROM media WHERE id = ?" and parameters [the_id]
+    return orm_delete of (orm_borrow of conn) and (db_lookup of (db_media_model) and "id" and (db_identity of the_id))
 end action
 
-// ---------------------------------------------------------------------------
-// Posts
-// ---------------------------------------------------------------------------
+define action called db_content_create with parameters conn and table_name and slug and title and body_markdown and the_status and author_id:
+    store record_value as orm_record of (db_content_model of table_name)
+    call orm_assign with record_value and [(orm_value of "slug" and slug) and (orm_value of "title" and title) and (orm_value of "body_markdown" and body_markdown) and (orm_value of "status" and the_status) and (orm_value of "author_id" and (db_identity of author_id))]
+    return db_insert_result of (orm_save of (orm_borrow of conn) and record_value)
+end action
+
+define action called db_content_update with parameters conn and table_name and the_id and slug and title and body_markdown and the_status:
+    store requested as db_lookup of (db_content_model of table_name) and "id" and (db_identity of the_id)
+    store revised_values as [(orm_value of "slug" and slug) and (orm_value of "title" and title) and (orm_value of "body_markdown" and body_markdown) and (orm_value of "status" and the_status) and (orm_value of "updated_at" and (db_clock of conn and "+0 seconds"))]
+    return orm_update of (orm_borrow of conn) and requested and revised_values
+end action
+
 define action called post_create with parameters conn and slug and title and body_markdown and the_status and author_id:
-    return execute conn with "INSERT INTO posts (slug, title, body_markdown, status, author_id) VALUES (?, ?, ?, ?, ?)" and parameters [slug and title and body_markdown and the_status and author_id]
+    return db_content_create of conn and "posts" and slug and title and body_markdown and the_status and author_id
 end action
 
 define action called post_update with parameters conn and the_id and slug and title and body_markdown and the_status:
-    return execute conn with "UPDATE posts SET slug = ?, title = ?, body_markdown = ?, status = ?, updated_at = datetime('now') WHERE id = ?" and parameters [slug and title and body_markdown and the_status and the_id]
+    return db_content_update of conn and "posts" and the_id and slug and title and body_markdown and the_status
 end action
 
 define action called post_delete with parameters conn and the_id:
-    return execute conn with "DELETE FROM posts WHERE id = ?" and parameters [the_id]
+    return orm_delete of (orm_borrow of conn) and (db_lookup of (db_content_model of "posts") and "id" and (db_identity of the_id))
+end action
+
+define action called db_post_find with parameters conn and field_name and field_value:
+    store session as orm_borrow of conn
+    store record_value as orm_first of session and (db_lookup of (db_content_model of "posts") and field_name and field_value)
+    check if record_value is not nothing:
+        call orm_load with session and [record_value] and "author"
+    end check
+    return db_post_map of record_value and "full"
 end action
 
 define action called post_by_id with parameters conn and the_id:
-    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.author_id AS author_id, p.created_at AS created_at, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.id = ?" and parameters [the_id]
-    return first_row of rows
+    return db_post_find of conn and "id" and (db_identity of the_id)
 end action
 
 define action called post_by_slug with parameters conn and slug:
-    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.author_id AS author_id, p.created_at AS created_at, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.slug = ?" and parameters [slug]
-    return first_row of rows
+    return db_post_find of conn and "slug" and slug
 end action
 
-// Published posts, newest first, one page at a time.
+define action called db_post_list with parameters conn and requested and projection_kind and page_limit and page_offset:
+    store records as db_read_records of (orm_borrow of conn) and requested and page_limit and page_offset and "author"
+    store mapped_rows as []
+    for each record_value in records:
+        push with mapped_rows and (db_post_map of record_value and projection_kind)
+    end for
+    return mapped_rows
+end action
+
 define action called post_list_published with parameters conn and page_limit and page_offset:
-    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.body_markdown AS body_markdown, p.status AS status, p.created_at AS created_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.status = 'published' ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?" and parameters [page_limit and page_offset]
-    return rows
+    store requested as db_lookup of (db_content_model of "posts") and "status" and "published"
+    call orm_order_by with requested and "created_at" and "descending"
+    call orm_order_by with requested and "id" and "descending"
+    return db_post_list of conn and requested and "published" and page_limit and page_offset
 end action
 
 define action called post_count_published with parameters conn:
-    store rows as query conn with "SELECT count(*) AS n FROM posts WHERE status = 'published'"
-    store row0 as rows[0]
-    return row0["n"]
+    return orm_count of (orm_borrow of conn) and (db_lookup of (db_content_model of "posts") and "status" and "published")
 end action
 
-// All posts for the admin list (optionally scoped to one author).
 define action called post_list_all with parameters conn:
-    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id ORDER BY p.updated_at DESC, p.id DESC"
-    return rows
+    store requested as orm_query of (db_content_model of "posts")
+    call orm_order_by with requested and "updated_at" and "descending"
+    call orm_order_by with requested and "id" and "descending"
+    return db_post_list of conn and requested and "admin" and -1 and 0
 end action
 
 define action called post_list_by_author with parameters conn and author_id:
-    store rows as query conn with "SELECT p.id AS id, p.slug AS slug, p.title AS title, p.status AS status, p.author_id AS author_id, p.updated_at AS updated_at, u.username AS author_name FROM posts p LEFT JOIN users u ON u.id = p.author_id WHERE p.author_id = ? ORDER BY p.updated_at DESC, p.id DESC" and parameters [author_id]
-    return rows
+    store requested as db_lookup of (db_content_model of "posts") and "author_id" and (db_identity of author_id)
+    call orm_order_by with requested and "updated_at" and "descending"
+    call orm_order_by with requested and "id" and "descending"
+    return db_post_list of conn and requested and "admin" and -1 and 0
 end action
 
-// ---------------------------------------------------------------------------
-// Pages
-// ---------------------------------------------------------------------------
 define action called page_create with parameters conn and slug and title and body_markdown and the_status and author_id:
-    return execute conn with "INSERT INTO pages (slug, title, body_markdown, status, author_id) VALUES (?, ?, ?, ?, ?)" and parameters [slug and title and body_markdown and the_status and author_id]
+    return db_content_create of conn and "pages" and slug and title and body_markdown and the_status and author_id
 end action
 
 define action called page_update with parameters conn and the_id and slug and title and body_markdown and the_status:
-    return execute conn with "UPDATE pages SET slug = ?, title = ?, body_markdown = ?, status = ?, updated_at = datetime('now') WHERE id = ?" and parameters [slug and title and body_markdown and the_status and the_id]
+    return db_content_update of conn and "pages" and the_id and slug and title and body_markdown and the_status
 end action
 
 define action called page_delete with parameters conn and the_id:
-    return execute conn with "DELETE FROM pages WHERE id = ?" and parameters [the_id]
+    return orm_delete of (orm_borrow of conn) and (db_lookup of (db_content_model of "pages") and "id" and (db_identity of the_id))
 end action
 
 define action called page_by_id with parameters conn and the_id:
-    store rows as query conn with "SELECT id, slug, title, body_markdown, status, author_id, updated_at FROM pages WHERE id = ?" and parameters [the_id]
-    return first_row of rows
+    return db_page_map of (orm_find_key of (orm_borrow of conn) and (db_content_model of "pages") and (db_identity of the_id)) and "full"
 end action
 
 define action called page_by_slug with parameters conn and slug:
-    store rows as query conn with "SELECT id, slug, title, body_markdown, status, author_id, updated_at FROM pages WHERE slug = ? AND status = 'published'" and parameters [slug]
-    return first_row of rows
+    store requested as orm_query of (db_content_model of "pages")
+    call orm_where with requested and (orm_all of [(orm_compare of "slug" and "equal" and slug) and (orm_compare of "status" and "equal" and "published")])
+    return db_page_map of (orm_first of (orm_borrow of conn) and requested) and "full"
+end action
+
+define action called db_page_list with parameters conn and requested and projection_kind:
+    call orm_order_by with requested and "title" and "ascending"
+    store records as db_read_records of (orm_borrow of conn) and requested and -1 and 0 and ""
+    store mapped_rows as []
+    for each record_value in records:
+        push with mapped_rows and (db_page_map of record_value and projection_kind)
+    end for
+    return mapped_rows
 end action
 
 define action called page_list_all with parameters conn:
-    store rows as query conn with "SELECT id, slug, title, status, updated_at FROM pages ORDER BY title"
-    return rows
+    return db_page_list of conn and (orm_query of (db_content_model of "pages")) and "admin"
 end action
 
 define action called page_list_by_author with parameters conn and author_id:
-    store rows as query conn with "SELECT id, slug, title, status, updated_at FROM pages WHERE author_id = ? ORDER BY title" and parameters [author_id]
-    return rows
+    return db_page_list of conn and (db_lookup of (db_content_model of "pages") and "author_id" and (db_identity of author_id)) and "admin"
 end action
 
-// Published pages, for the site nav.
 define action called page_list_published with parameters conn:
-    store rows as query conn with "SELECT id, slug, title FROM pages WHERE status = 'published' ORDER BY title"
-    return rows
+    return db_page_list of conn and (db_lookup of (db_content_model of "pages") and "status" and "published") and "navigation"
 end action
 
-// ---------------------------------------------------------------------------
-// Counts (dashboard)
-// ---------------------------------------------------------------------------
 define action called posts_total with parameters conn:
-    store rows as query conn with "SELECT count(*) AS n FROM posts"
-    store row0 as rows[0]
-    return row0["n"]
+    return orm_count of (orm_borrow of conn) and (orm_query of (db_content_model of "posts"))
 end action
 
 define action called pages_total with parameters conn:
-    store rows as query conn with "SELECT count(*) AS n FROM pages"
-    store row0 as rows[0]
-    return row0["n"]
+    return orm_count of (orm_borrow of conn) and (orm_query of (db_content_model of "pages"))
 end action

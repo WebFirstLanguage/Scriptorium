@@ -50,3 +50,30 @@ relationship batching, and legacy result aliases/projections. No SQL injection
 path was found in the ordinary value API. The explicit raw SQL escape hatch is
 intentionally trusted application code. HTTP compatibility is separately
 recorded in `tests/integration/EVIDENCE.md`.
+
+## Green and remedy review
+
+The owner's remedies pass all eight review cases on the same combined runtime;
+retained log `target/capability-probes/db-review-green.log`. NULL compatibility
+lookups now compile to a false predicate, while explicit ORM NULL equality still
+means `IS NULL`. Nullable-key pages use a stable physical SQLite row identity
+for read ordering and bounded writes. Insert results retain exact text rowid
+metadata directly from `RETURNING`; sensitive updates use the native write result.
+
+The additional `TestPrograms/orm-write-review.test.wfl` cases passed **2/2** on
+that runtime (`target/review-probes/rowid-sensitive.log` before promotion):
+
+- A table with declared `_ROWID_`, `rowid`, and `_orm_insert_rowid` fields retains
+  all logical values, exposes the actual physical rowid, and changes only the
+  selected second NULL-key row through the remaining `oid` alias.
+- The trusted sensitive-update API rejects unrestricted queries, primary-key
+  changes and invalid field types before mutation. A SQL-looking text value is
+  bound literally without changing a neighboring sensitive field.
+
+The reviewed remedy addresses the confirmed findings. Physical-row selection
+is scoped to ordinary SQLite tables with model declarations describing columns
+that shadow rowid aliases; WITHOUT ROWID tables are outside the documented ORM
+scope. New aliases are quoted and validated, and physical identity stays inside
+SQL for mutation so large identities do not pass through floating-point values.
+Final combined-suite and remote CI acceptance are separate from this technical
+source review and focused evidence.
