@@ -258,8 +258,9 @@ not obscure which runtime was tested. The nightly workflow is not a declaration
 that every nightly, platform, or production configuration is supported.
 
 Governance provisions the latest official nightly publication on Linux and
-Windows from WFL's canonical download CDN. It resolves the publication record
-to an immutable versioned asset and verifies its immutable SHA256 sidecar and
+Windows from WFL's canonical download CDN. A unique manifest request key avoids
+old rolling-pointer cache entries. It resolves the publication record to an
+immutable versioned asset and verifies its immutable SHA256 sidecar and
 executable version. The daily GitHub release is an immutable mirror that can
 remain older after another publication on the same day. The job records the
 WFL source revision, asset URL, SHA256 and runtime version before running WFL

@@ -9,8 +9,23 @@ tests does not establish that the published nightly supports this change.
 All three separate upstream changes have independent technical review,
 successful exact-head remote CI and approved merges. Official nightly
 [35506079498](https://github.com/WebFirstLanguage/wfl/actions/runs/35506079498)
-is building their combined source `8d82d785ea59300834de1c48b04a7ba0e187a1cd`,
-version `26.9.14`; publication is not yet claimed complete.
+completed successfully for their combined source
+`8d82d785ea59300834de1c48b04a7ba0e187a1cd`, version `26.9.14`.
+
+Published Docker digest:
+`bsbyrdwfl/wfl@sha256:8498abec67995274cb4d6cc2ee9580be11f70e15af20497bb62e51d4b2058e3c`.
+The immutable Windows MSI SHA256 is
+`a3ff0b5c8dd2141536004298583fb698c20596fb5a49ad90d53f56d4ac15e3d4`;
+the Linux archive SHA256 is
+`b6b74d37ad4baae4bf7333c8a27f5dcc332104cdf7257c6da6754ea1fc7c809d`.
+The exact governance provisioning script downloaded, verified and extracted
+the Windows MSI locally and confirmed its version. Both publication jobs and
+all nightly validation gates passed. The same-day GitHub mirror remains at
+26.9.12 by its immutable-release policy; governance uses the canonical CDN.
+A retained one-hour CDN cache entry initially returned the old manifest even
+with `Cache-Control: no-cache`. A unique request key returned the verified new
+manifest and is now part of governance provisioning. Immutable asset downloads
+and checksums are still independently verified.
 
 | Upstream PR | Tested head | Remote CI |
 | --- | --- | --- |
@@ -72,7 +87,6 @@ runtime, `scripts/run_tests.wfl --group application` reports 24 suites,
 log is `target/ci-propagation-red-local.log`. Its remote assertion-failure proof
 and removal are still required; the full suite temporarily contains 42 suites.
 
-- Publish the reviewed upstream changes through the official nightly workflow.
 - Push an actual intentionally failing WFL test, observe the new runner and
   its Blacksmith CI job fail, then remove it and verify a clean run.
 - Inspect all required checks on the final proposed Scriptorium revision.

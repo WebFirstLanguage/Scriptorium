@@ -42,7 +42,9 @@ jobs:
           # The GitHub daily release is an immutable mirror. The canonical
           # publisher can release a newer runtime on the same day to this CDN.
           $cdn = 'https://wfl.nyc3.cdn.digitaloceanspaces.com'
-          $publication = Invoke-RestMethod -Uri "$cdn/status.json"
+          # A previously cached pointer can retain the CDN's older one-hour TTL.
+          $publicationUri = "$cdn/status.json?request=$([guid]::NewGuid().ToString('N'))"
+          $publication = Invoke-RestMethod -Uri $publicationUri
           if ($publication.result -ne 'success' -or $publication.branch -ne 'main' -or
               $publication.version -notmatch '^\d+\.\d+\.\d+$' -or
               $publication.sha -notmatch '^[a-f0-9]{40}$') {

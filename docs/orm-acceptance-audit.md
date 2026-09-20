@@ -45,6 +45,6 @@ and final revision provenance remain pending.
 | Final ready-to-merge five-section PR | Source frozen, complete local pass and hygiene recorded; pending deliberate CI Red/Green, fresh nightly provenance and exact-head remote inspection |
 
 The user approved upstream merges and official nightly publication. All three
-prerequisite PRs are merged; publication must complete before final Scriptorium
-acceptance. Scriptorium merging and production deployment remain outside this
-deliverable.
+prerequisite PRs are merged and official nightly 26.9.14 is published. The
+remaining Scriptorium acceptance checks are listed in `orm-verification.md`.
+Scriptorium merging and production deployment remain outside this deliverable.
