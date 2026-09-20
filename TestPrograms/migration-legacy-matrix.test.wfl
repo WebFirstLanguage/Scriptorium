@@ -1,0 +1,118 @@
+include from "../tests/fixtures/legacy-database.wfl"
+
+describe "Inventoried legacy adoption states":
+    test "both full historical versions preserve all tables and extension objects":
+        for each with_csrf in [no, yes]:
+            store database_path as legacy_fixture_path
+            open database at ("sqlite://" with database_path) as conn
+            try:
+                in transaction on conn:
+                    for each sql_text in (legacy_fixture_statements of with_csrf):
+                        store created_table as execute conn with sql_text
+                    end for
+                    store user_row as execute conn with "INSERT INTO users(id,username,password_hash,role,created_at) VALUES(9007199254740993,'legacy-user','synthetic-existing-hash','extension-role',NULL)"
+                    store session_row as execute conn with "INSERT INTO sessions(id,user_id,created_at,expires_at) VALUES('legacy-session',9007199254740993,NULL,'2099-01-01')"
+                    check if with_csrf:
+                        store token_row as execute conn with "UPDATE sessions SET csrf_token='synthetic-existing-token'"
+                    end check
+                    for each table_name in ["posts", "pages"]:
+                        store content_row as execute conn with ("INSERT INTO " with table_name with "(id,slug,title,body_markdown,status,author_id,created_at,updated_at) VALUES(77,'kept','Kept title','','extension-status',999,NULL,'2001-01-01')")
+                    end for
+                    store settings_row as execute conn with "INSERT INTO settings(skey,svalue) VALUES('empty','')"
+                    store media_row as execute conn with "INSERT INTO media(id,filename,original_name,content_type,size,uploader_id,created_at) VALUES(33,'kept.png','kept original','image/png',3,NULL,NULL)"
+                    store attempt_row as execute conn with "INSERT INTO login_attempts(id,ip,attempted_at) VALUES(8,'192.0.2.10',NULL)"
+                    store extension_table as execute conn with "CREATE TABLE extension_state(value TEXT)"
+                    store extension_row as execute conn with "INSERT INTO extension_state VALUES('kept extension')"
+                    store extension_index as execute conn with "CREATE INDEX extension_post_status ON posts(status)"
+                    store extension_trigger as execute conn with "CREATE TRIGGER extension_post_write AFTER INSERT ON posts BEGIN INSERT INTO extension_state VALUES(new.title); END"
+                end transaction
+                call scriptorium_migrate with conn
+                call scriptorium_migrate with conn
+                store user_rows as query conn with "SELECT CAST(id AS TEXT) AS id,password_hash,role,created_at FROM users"
+                store saved_user as user_rows[0]
+                expect saved_user["id"] to equal "9007199254740993"
+                expect saved_user["password_hash"] to equal "synthetic-existing-hash"
+                expect saved_user["role"] to equal "extension-role"
+                expect saved_user["created_at"] to equal nothing
+                store sessions_rows as query conn with "SELECT csrf_token FROM sessions"
+                store saved_session as sessions_rows[0]
+                store expected_token as ""
+                check if with_csrf:
+                    change expected_token to "synthetic-existing-token"
+                end check
+                expect saved_session["csrf_token"] to equal expected_token
+                for each table_name in ["posts", "pages"]:
+                    store content_rows as query conn with ("SELECT status,author_id,created_at,updated_at FROM " with table_name)
+                    store saved_content as content_rows[0]
+                    expect saved_content["status"] to equal "extension-status"
+                    expect saved_content["author_id"] to equal 999
+                    expect saved_content["created_at"] to equal nothing
+                    expect saved_content["updated_at"] to equal "2001-01-01"
+                end for
+                store remaining_rows as query conn with "SELECT (SELECT count(*) FROM media WHERE uploader_id IS NULL AND created_at IS NULL) AS media_n,(SELECT count(*) FROM login_attempts WHERE attempted_at IS NULL) AS attempts_n,(SELECT count(*) FROM settings WHERE skey='empty' AND svalue='') AS settings_n"
+                store remaining as remaining_rows[0]
+                expect remaining["media_n"] to equal 1
+                expect remaining["attempts_n"] to equal 1
+                expect remaining["settings_n"] to equal 1
+                store extension_rows as query conn with "SELECT name FROM sqlite_schema WHERE name IN ('extension_state','extension_post_status','extension_post_write')"
+                expect length of extension_rows to equal 3
+                store history_rows as query conn with "SELECT event_kind FROM _orm_migration_events ORDER BY event_id"
+                expect length of history_rows to equal 2
+                store initial_event as history_rows[0]
+                expect initial_event["event_kind"] to equal "adopt"
+                store second_event as history_rows[1]
+                store expected_event as "apply"
+                check if with_csrf:
+                    change expected_event to "adopt"
+                end check
+                expect second_event["event_kind"] to equal expected_event
+            finally:
+                call legacy_fixture_remove with conn and database_path
+            end try
+        end for
+    end test
+
+    test "sessions-only current legacy preserves its existing token":
+        store database_path as legacy_fixture_path
+        open database at ("sqlite://" with database_path) as conn
+        try:
+            in transaction on conn:
+                store sql_statements as legacy_fixture_statements of yes
+                store created_table as execute conn with sql_statements[1]
+                store session_row as execute conn with "INSERT INTO sessions(id,user_id,expires_at,csrf_token) VALUES('kept',7,'2099-01-01','existing token')"
+            end transaction
+            call scriptorium_migrate with conn
+            store kept_rows as query conn with "SELECT csrf_token FROM sessions WHERE id='kept'"
+            store kept_row as kept_rows[0]
+            expect kept_row["csrf_token"] to equal "existing token"
+            store history_rows as query conn with "SELECT * FROM _orm_migrations"
+            expect length of history_rows to equal 2
+        finally:
+            call legacy_fixture_remove with conn and database_path
+        end try
+    end test
+
+    test "unknown partial tables and changed constraints are never blindly stamped":
+        for each bad_sql in ["CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at TEXT DEFAULT (datetime('now')))", "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL CHECK(length(expires_at)>0))"]:
+            store database_path as legacy_fixture_path
+            open database at ("sqlite://" with database_path) as conn
+            try:
+                store bad_table as execute conn with bad_sql
+                store refused as no
+                try:
+                    call scriptorium_migrate with conn
+                when error:
+                    change refused to yes
+                    expect error_message contains "legacy adoption" to be yes
+                end try
+                expect refused to be yes
+                store history_rows as query conn with "SELECT name FROM sqlite_schema WHERE name='_orm_migrations'"
+                expect length of history_rows to equal 0
+                store table_rows as query conn with "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                expect length of table_rows to equal 1
+            finally:
+                call legacy_fixture_remove with conn and database_path
+            end try
+        end for
+    end test
+end describe

@@ -13,6 +13,7 @@ define action called migration_cli_fixture:
         call test_copy_tree with (path_join of migration_repo_root and "app/migrations") and (path_join of site_root and "app/migrations")
         call copy_file with (path_join of migration_repo_root and "app/migrations.wfl") and (path_join of site_root and "app/migrations.wfl")
         call copy_file with (path_join of migration_repo_root and "app/util.wfl") and (path_join of site_root and "app/util.wfl")
+        call test_write_text with (path_join of site_root and ".wflcfg") and "execution_logging = false\nlogging_enabled = false\ndebug_report_enabled = false\n"
         return site_root
     when error:
         check if is_dir of site_root:
@@ -34,11 +35,12 @@ describe "Migration CLI target selection and lifecycle":
     test "absent status and plan create no database or data directory with default or configured paths":
         store site_root as migration_cli_fixture
         try:
+            delete file at (path_join of site_root and ".wflcfg")
             store default_status as migration_cli_run of site_root and ["status"]
             expect default_status["exit_code"] to equal 0
             expect default_status["output"] contains "Database absent" to be yes
             expect file exists at (path_join of site_root and "scriptorium.db") to be no
-            call test_write_text with (path_join of site_root and ".wflcfg") and "logging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\ndata_dir = ignored-second-value\n"
+            call test_write_text with (path_join of site_root and ".wflcfg") and "execution_logging = false\nlogging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\ndata_dir = ignored-second-value\n"
             store configured_plan as migration_cli_run of site_root and ["plan"]
             expect configured_plan["exit_code"] to equal 0
             expect configured_plan["output"] contains "configured-data" to be yes
@@ -56,7 +58,7 @@ describe "Migration CLI target selection and lifecycle":
     test "configured targeted apply repeat refusal and changed-source errors have real process statuses":
         store site_root as migration_cli_fixture
         try:
-            call test_write_text with (path_join of site_root and ".wflcfg") and "logging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\n"
+            call test_write_text with (path_join of site_root and ".wflcfg") and "execution_logging = false\nlogging_enabled = false\ndebug_report_enabled = false\ndata_dir = configured-data\n"
             store first_apply as migration_cli_run of site_root and ["up", "--target", "20200101000000"]
             expect first_apply["exit_code"] to equal 0
             expect first_apply["output"] contains "Applied migrations: 1" to be yes
@@ -94,7 +96,41 @@ describe "Migration CLI target selection and lifecycle":
         end try
     end test
 
-    test "scaffold gives explicit registration instructions and never opens a database":
+    test "legacy plans respect their target and never stamp adoption history":
+        store site_root as migration_cli_fixture
+        try:
+            store database_path as path_join of site_root and "scriptorium.db"
+            open database at ("sqlite://" with database_path) as legacy_db
+            try:
+                store created as execute legacy_db with "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+            finally:
+                close database legacy_db
+            end try
+            store old_plan as migration_cli_run of site_root and ["plan", "--target", "20200101000000"]
+            expect old_plan["exit_code"] to equal 0
+            expect old_plan["output"] contains "Pending after adoption: 0" to be yes
+            open database at ("sqlite://" with database_path) as current_legacy_db
+            try:
+                store altered as execute current_legacy_db with "ALTER TABLE sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''"
+            finally:
+                close database current_legacy_db
+            end try
+            store impossible_plan as migration_cli_run of site_root and ["plan", "--target", "20200101000000"]
+            expect impossible_plan["exit_code"] to equal 1
+            expect impossible_plan["output"] contains "predates the existing legacy schema" to be yes
+            open database at ("sqlite://" with database_path) as inspection_db
+            try:
+                store history_rows as query inspection_db with "SELECT name FROM sqlite_schema WHERE name='_orm_migrations'"
+                expect length of history_rows to equal 0
+            finally:
+                close database inspection_db
+            end try
+        finally:
+            call remove_dir with site_root and yes
+        end try
+    end test
+
+    test "scaffold instructions produce an executable registered up and down migration":
         store site_root as migration_cli_fixture
         try:
             store before_names as list_dir of (path_join of site_root and "app/migrations")
@@ -105,6 +141,37 @@ describe "Migration CLI target selection and lifecycle":
             store after_names as list_dir of (path_join of site_root and "app/migrations")
             expect length of after_names to equal ((length of before_names) plus 1)
             expect file exists at (path_join of site_root and "scriptorium.db") to be no
+            store created_name as ""
+            for each version_name in after_names:
+                check if (contains of before_names and version_name) is equal to no:
+                    change created_name to version_name
+                end check
+            end for
+            store created_id as substring of created_name and 0 and 14
+            store created_path as path_join of site_root and "app/migrations" and created_name
+            store scaffold_text as test_read_text of created_path
+            store completed_text as replace "up_steps is []" with "up_steps is [(orm_migration_sql of \"INSERT INTO settings(skey,svalue) VALUES('scaffold-proof','applied')\" and [])]" in scaffold_text
+            change completed_text to replace "down_steps is []" with "down_steps is [(orm_migration_sql of \"DELETE FROM settings WHERE skey='scaffold-proof'\" and [])]" in completed_text
+            change completed_text to replace "TODO: describe why rollback cannot restore the data, or supply lossless down steps" with "" in completed_text
+            call test_write_text with created_path and completed_text
+            store bridge_path as path_join of site_root and "app/migrations.wfl"
+            store bridge_text as test_read_text of bridge_path
+            change bridge_text to replace "include from \"migrations/20200102000000_session_csrf.wfl\"" with ("include from \"migrations/" with created_name with "\"") in bridge_text
+            store registered_text as ""
+            for each source_line in (split bridge_text by "\n"):
+                store updated_line as source_line
+                check if source_line contains "return [(migration_20200101000000":
+                    change updated_line to (substring of source_line and 0 and ((length of source_line) minus 1)) with ", (migration_" with created_id with " of (scriptorium_migration_source of \"" with created_name with "\"))]"
+                end check
+                change registered_text to registered_text with updated_line with "\n"
+            end for
+            call test_write_text with bridge_path and registered_text
+            store applied_scaffold as migration_cli_run of site_root and ["up"]
+            expect applied_scaffold["exit_code"] to equal 0
+            expect applied_scaffold["output"] contains "Applied migrations: 3" to be yes
+            store rolled_scaffold as migration_cli_run of site_root and ["down", "--count", "1"]
+            expect rolled_scaffold["exit_code"] to equal 0
+            expect rolled_scaffold["output"] contains "Applied migrations: 2" to be yes
             store malicious_name as migration_cli_run of site_root and ["new", "../escape"]
             expect malicious_name["exit_code"] to equal 1
             expect file exists at (path_join of site_root and "app/escape.wfl") to be no

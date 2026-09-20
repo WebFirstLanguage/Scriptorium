@@ -1,0 +1,100 @@
+include from "../tests/fixtures/migration-registry.wfl"
+
+describe "Migration failure boundaries":
+    test "SQLite query-only access fails with its read-only cause and leaves history unchanged":
+        store database_path as migration_fixture_path
+        store owner_session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store initialized as orm_migrate of owner_session and registry and "20260920000002"
+            // Sole sequential handle: exactly one pooled connection exists.
+            // SQLite itself enforces query_only on that connection. This is
+            // portable even when CI's OS account can bypass file permissions.
+            store readonly_session as orm_open of database_path
+            try:
+                store query_only as orm_sql_execute of readonly_session and "PRAGMA query_only=ON" and []
+                store refused as no
+                try:
+                    store blocked_plan as orm_migrate of readonly_session and registry and "latest"
+                when error:
+                    change refused to yes
+                    expect error_message contains "readonly" to be yes
+                end try
+                expect refused to be yes
+            finally:
+                call orm_close with readonly_session
+            end try
+            store kept_plan as orm_migration_status of owner_session and registry
+            expect length of kept_plan.applied to equal 2
+        finally:
+            call migration_fixture_remove with owner_session and database_path
+        end try
+    end test
+
+    test "registry order duplicates empty scaffolds and destructive fake reversals fail before history exists":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store rejected as 0
+            for each bad_registry in [[registry[0], registry[0]], [registry[1], registry[0]]]:
+                try:
+                    store invalid_plan as orm_migration_plan of session and bad_registry and "latest"
+                when error:
+                    change rejected to rejected plus 1
+                end try
+            end for
+            create new OrmMigration as empty_version:
+                migration_id is "20260920000004"
+                migration_name is "Unfinished scaffold"
+            end
+            try:
+                store invalid_plan as orm_migration_plan of session and [empty_version] and "latest"
+            when error:
+                change rejected to rejected plus 1
+                expect error_message contains "scaffold" to be yes
+            end try
+            store before_table as migration_fixture_table of yes and no
+            create new OrmMigration as destructive_version:
+                migration_id is "20260920000005"
+                migration_name is "Fake reverse"
+                managed_before is [before_table]
+                up_steps is [(orm_migration_drop_table of before_table)]
+                down_steps is [(orm_migration_create_table of before_table)]
+            end
+            try:
+                store invalid_plan as orm_migration_plan of session and [destructive_version] and "latest"
+            when error:
+                change rejected to rejected plus 1
+                expect error_message contains "irreversible reason" to be yes
+            end try
+            expect rejected to equal 4
+            expect orm_schema_exists of session and "_orm_migrations" to be no
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "a database path whose parent is a file reports a real open failure":
+        store owned_path as migration_fixture_path
+        open file at owned_path for writing as blocker_file
+        try:
+            wait for write content "synthetic path blocker" into blocker_file
+        finally:
+            close file blocker_file
+        end try
+        try:
+            store refused as no
+            try:
+                store invalid_session as orm_open of (path_join of owned_path and "site.db")
+                call orm_close with invalid_session
+            when error:
+                change refused to yes
+            end try
+            expect refused to be yes
+            expect file exists at owned_path to be yes
+        finally:
+            delete file at owned_path
+        end try
+    end test
+end describe

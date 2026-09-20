@@ -1,0 +1,94 @@
+// Immutable historical schema. Never import app/models.wfl here.
+define action called historical_field with parameters field_name and type_name and nullable_value and primary_value and generated_value and unique_value and has_default_value and default_value and server_value:
+    create new OrmField as field_spec:
+        field_name is field_name
+        value_type is type_name
+        nullable is nullable_value
+        primary_key is primary_value
+        generated is generated_value
+        unique_value is unique_value
+        has_default is has_default_value
+        default_value is default_value
+        server_default is server_value
+    end
+    return field_spec
+end action
+
+define action called historical_identity:
+    return historical_field of "id" and "identity" and no and yes and yes and no and no and nothing and ""
+end action
+
+define action called historical_text with parameters field_name and nullable_value:
+    return historical_field of field_name and "text" and nullable_value and no and no and no and no and nothing and ""
+end action
+
+define action called historical_default with parameters field_name and default_value:
+    return historical_field of field_name and "text" and no and no and no and no and yes and default_value and ""
+end action
+
+define action called historical_timestamp with parameters field_name:
+    return historical_field of field_name and "text" and yes and no and no and no and no and nothing and "current timestamp"
+end action
+
+define action called historical_content_table with parameters table_name:
+    store field_specs as [historical_identity, (historical_field of "slug" and "text" and no and no and no and yes and no and nothing and ""), (historical_text of "title" and no), (historical_default of "body_markdown" and ""), (historical_default of "status" and "draft"), (historical_field of "author_id" and "identity" and yes and no and no and no and no and nothing and ""), (historical_timestamp of "created_at"), (historical_timestamp of "updated_at")]
+    create new OrmModel as model_spec:
+        table_name is table_name
+        fields is field_specs
+    end
+    return orm_schema_table of model_spec
+end action
+
+define action called historical_initial_tables:
+    store historical_tables as []
+    create new OrmModel as users_model:
+        table_name is "users"
+        fields is [historical_identity, (historical_field of "username" and "text" and no and no and no and yes and no and nothing and ""), (historical_text of "password_hash" and no), (historical_default of "role" and "author"), (historical_timestamp of "created_at")]
+    end
+    push with historical_tables and (orm_schema_table of users_model)
+    create new OrmModel as sessions_model:
+        table_name is "sessions"
+        fields is [(historical_field of "id" and "text" and yes and yes and no and no and no and nothing and ""), (historical_field of "user_id" and "identity" and no and no and no and no and no and nothing and ""), (historical_timestamp of "created_at"), (historical_text of "expires_at" and no)]
+    end
+    push with historical_tables and (orm_schema_table of sessions_model)
+    push with historical_tables and (historical_content_table of "posts")
+    push with historical_tables and (historical_content_table of "pages")
+    create new OrmModel as settings_model:
+        table_name is "settings"
+        fields is [(historical_field of "skey" and "text" and yes and yes and no and no and no and nothing and ""), (historical_default of "svalue" and "")]
+    end
+    push with historical_tables and (orm_schema_table of settings_model)
+    create new OrmModel as media_model:
+        table_name is "media"
+        fields is [historical_identity, (historical_field of "filename" and "text" and no and no and no and yes and no and nothing and ""), (historical_default of "original_name" and ""), (historical_default of "content_type" and ""), (historical_field of "size" and "integer" and no and no and no and no and yes and 0 and ""), (historical_field of "uploader_id" and "identity" and yes and no and no and no and no and nothing and ""), (historical_timestamp of "created_at")]
+    end
+    push with historical_tables and (orm_schema_table of media_model)
+    create new OrmIndex as attempts_index:
+        index_name is "idx_login_attempts_ip_time"
+        field_names is ["ip", "attempted_at"]
+    end
+    create new OrmModel as attempts_model:
+        table_name is "login_attempts"
+        fields is [historical_identity, (historical_text of "ip" and no), (historical_timestamp of "attempted_at")]
+        indexes is [attempts_index]
+    end
+    push with historical_tables and (orm_schema_table of attempts_model)
+    return historical_tables
+end action
+
+define action called migration_20200101000000 with parameters immutable_source:
+    store historical_tables as historical_initial_tables
+    store create_steps as []
+    for each table_spec in historical_tables:
+        push with create_steps and (orm_migration_create_table of table_spec)
+    end for
+    create new OrmMigration as migration_spec:
+        migration_id is "20200101000000"
+        migration_name is "Initial Scriptorium schema"
+        up_steps is create_steps
+        irreversible_reason is "removing the initial schema would destroy site records"
+        managed_after is historical_tables
+        source_text is immutable_source
+    end
+    return migration_spec
+end action

@@ -1,0 +1,80 @@
+include from "../tests/fixtures/migration-registry.wfl"
+
+describe "Independent schema preservation review":
+    test "quoted column whitespace is real schema drift":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store table_spec as migration_fixture_table of yes and no
+            store created as orm_sql_execute of session and "CREATE TABLE items (id INTEGER PRIMARY KEY AUTOINCREMENT, \"ti tle\" TEXT)" and []
+            store problem_text as orm_schema_problem of session and table_spec
+            expect (length of problem_text) to be greater than 0
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "a retained nullable column cannot silently disappear from rebuild copy":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store table_spec as migration_fixture_table of yes and no
+            create new OrmMigration as first_version:
+                migration_id is "20260920000001"
+                migration_name is "Create fixture"
+                managed_after is [table_spec]
+                up_steps is [(orm_migration_create_table of table_spec)]
+                irreversible_reason is "initial records"
+            end
+            create new OrmMigration as bad_version:
+                migration_id is "20260920000002"
+                migration_name is "Omitted retained column"
+                managed_before is [table_spec]
+                managed_after is [table_spec]
+                up_steps is [(orm_migration_rebuild of table_spec and table_spec and ["id"] and ["id"])]
+                down_steps is [(orm_migration_rebuild of table_spec and table_spec and ["id"] and ["id"])]
+            end
+            store initialized as orm_migrate of session and [first_version] and "latest"
+            store inserted as orm_sql_execute of session and "INSERT INTO items(title) VALUES ('must retain')" and []
+            store refused as no
+            try:
+                store migrated as orm_migrate of session and [first_version, bad_version] and "latest"
+            when error:
+                change refused to yes
+            end try
+            store actual_rows as orm_sql_query of session and "SELECT title FROM items" and []
+            store actual_row as actual_rows[0]
+            display "retained value after attempted migration: " with actual_row["title"]
+            expect refused to equal yes
+            expect actual_row["title"] to equal "must retain"
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "before-only managed objects are checked after a declared drop":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store table_spec as migration_fixture_table of yes and no
+            store created as orm_schema_create of session and table_spec
+            create new OrmMigration as removed_version:
+                migration_id is "20260920000001"
+                migration_name is "Drop pre-existing managed items"
+                managed_before is [table_spec]
+                managed_after is []
+                up_steps is [(orm_migration_drop_table of table_spec)]
+                irreversible_reason is "drops records"
+            end
+            store refused as no
+            try:
+                store checked as orm_migration_schema_check of session and [removed_version] and 1
+            when error:
+                change refused to yes
+            end try
+            expect refused to equal yes
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+end describe

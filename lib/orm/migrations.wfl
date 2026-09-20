@@ -1,0 +1,514 @@
+include from "schema.wfl"
+
+create container OrmMigrationStep:
+    property operation: Text defaults "sql"
+    property before_table defaults nothing
+    property after_table defaults nothing
+    property source_fields: List defaults []
+    property target_fields: List defaults []
+    property column_spec defaults nothing
+    property index_spec defaults nothing
+    property sql_text: Text defaults ""
+    property bound_values: List defaults []
+end
+
+create container OrmMigration:
+    property migration_id: Text defaults ""
+    property migration_name: Text defaults ""
+    property up_steps: List defaults []
+    property down_steps: List defaults []
+    property irreversible_reason: Text defaults ""
+    property managed_before: List defaults []
+    property managed_after: List defaults []
+    property source_text: Text defaults ""
+end
+
+create container OrmMigrationPlan:
+    property applied: List defaults []
+    property pending: List defaults []
+    property target_id: Text defaults ""
+end
+
+define action called orm_migration_create_table with parameters table_spec:
+    create new OrmMigrationStep as migration_step:
+        operation is "create table"
+        after_table is table_spec
+    end
+    return migration_step
+end action
+
+define action called orm_migration_drop_table with parameters table_spec:
+    create new OrmMigrationStep as migration_step:
+        operation is "drop table"
+        before_table is table_spec
+    end
+    return migration_step
+end action
+
+define action called orm_migration_add_column with parameters before_table and after_table and field_spec:
+    create new OrmMigrationStep as migration_step:
+        operation is "add column"
+        before_table is before_table
+        after_table is after_table
+        column_spec is field_spec
+    end
+    return migration_step
+end action
+
+define action called orm_migration_rebuild with parameters before_table and after_table and source_fields and target_fields:
+    create new OrmMigrationStep as migration_step:
+        operation is "rebuild table"
+        before_table is before_table
+        after_table is after_table
+        source_fields is source_fields
+        target_fields is target_fields
+    end
+    return migration_step
+end action
+
+define action called orm_migration_sql with parameters sql_text and bound_values:
+    create new OrmMigrationStep as migration_step:
+        sql_text is sql_text
+        bound_values is bound_values
+    end
+    return migration_step
+end action
+
+define action called orm_migration_create_index with parameters table_spec and index_spec:
+    create new OrmMigrationStep as migration_step:
+        operation is "create index"
+        after_table is table_spec
+        index_spec is index_spec
+    end
+    return migration_step
+end action
+
+define action called orm_migration_drop_index with parameters table_spec and index_spec:
+    create new OrmMigrationStep as migration_step:
+        operation is "drop index"
+        before_table is table_spec
+        index_spec is index_spec
+    end
+    return migration_step
+end action
+
+define action called orm_schema_signature with parameters table_spec:
+    check if table_spec is nothing:
+        return nothing
+    end check
+    store field_values as []
+    for each field_spec in table_spec.model_spec.fields:
+        push with field_values and [field_spec.field_name, field_spec.value_type, field_spec.nullable, field_spec.primary_key, field_spec.generated, field_spec.unique_value, field_spec.sensitive, field_spec.has_default, field_spec.default_value, field_spec.server_default]
+    end for
+    store index_values as []
+    for each index_spec in table_spec.model_spec.indexes:
+        push with index_values and [index_spec.index_name, index_spec.field_names, index_spec.unique_values]
+    end for
+    return [(orm_schema_create_sql of table_spec and table_spec.model_spec.table_name), field_values, index_values]
+end action
+
+define action called orm_schema_signatures with parameters table_specs:
+    store signatures as []
+    store table_names as []
+    for each table_spec in table_specs:
+        store table_name as table_spec.model_spec.table_name
+        check if table_name starts with "_orm_" or (contains of table_names and (tolowercase of table_name)):
+            call orm_fail with "migration schema" and "managed table names must be unique and must not use the reserved _orm_ prefix"
+        end check
+        push with table_names and (tolowercase of table_name)
+        push with signatures and (orm_schema_signature of table_spec)
+    end for
+    return signatures
+end action
+
+define action called orm_step_signatures with parameters migration_steps:
+    store signatures as []
+    for each migration_step in migration_steps:
+        check if (contains of ["sql", "create table", "drop table", "add column", "rebuild table", "create index", "drop index"] and migration_step.operation) is equal to no:
+            call orm_fail with "migration step" and "unknown operation; use a typed schema helper or explicit parameterized SQL"
+        end check
+        check if migration_step.operation is equal to "sql" and (trim of migration_step.sql_text) is equal to "":
+            call orm_fail with "migration step" and "explicit SQL steps cannot be empty"
+        end check
+        store column_sql as ""
+        check if migration_step.column_spec is not nothing:
+            change column_sql to orm_schema_column of migration_step.column_spec
+        end check
+        store index_signature as nothing
+        check if migration_step.index_spec is not nothing:
+            store index_spec as migration_step.index_spec
+            change index_signature to [index_spec.index_name, index_spec.field_names, index_spec.unique_values]
+        end check
+        push with signatures and [migration_step.operation, (orm_schema_signature of migration_step.before_table), (orm_schema_signature of migration_step.after_table), migration_step.source_fields, migration_step.target_fields, column_sql, index_signature, migration_step.sql_text, migration_step.bound_values]
+    end for
+    return signatures
+end action
+
+define action called orm_migration_checksum with parameters migration_spec:
+    // Ordered lists have stable JSON serialization; object/map key order does not.
+    // Only platform line endings are normalized. Comments and whitespace in the
+    // immutable source intentionally participate in its checksum.
+    store source_lf as replace "\r\n" with "\n" in migration_spec.source_text
+    store signature as ["orm-migration-v1", migration_spec.migration_id, migration_spec.migration_name, (orm_step_signatures of migration_spec.up_steps), (orm_step_signatures of migration_spec.down_steps), migration_spec.irreversible_reason, (orm_schema_signatures of migration_spec.managed_before), (orm_schema_signatures of migration_spec.managed_after), source_lf]
+    return sha256 of (stringify_json of signature)
+end action
+
+define action called orm_migration_registry_check with parameters registry:
+    store known_ids as []
+    store prior_after as nothing
+    store previous_id as ""
+    for each migration_spec in registry:
+        store id_text as migration_spec.migration_id
+        check if (length of id_text) is not equal to 14:
+            call orm_fail with "migration registry" and "use a unique increasing 14-digit UTC timestamp ID (YYYYMMDDhhmmss)"
+        end check
+        count from 0 to 13:
+            check if (contains of "0123456789" and (substring of id_text and count and 1)) is equal to no:
+                call orm_fail with "migration registry" and "migration IDs contain exactly 14 decimal digits"
+            end check
+        end count
+        check if contains of known_ids and id_text:
+            call orm_fail with "migration registry" and "duplicate migration ID; register each immutable version once"
+        end check
+        check if previous_id is not equal to "":
+            check if (orm_decimal_exceeds of id_text and previous_id) is equal to no:
+                call orm_fail with "migration registry" and "register migrations in increasing ID order"
+            end check
+        end check
+        store before_signature as stringify_json of (orm_schema_signatures of migration_spec.managed_before)
+        check if prior_after is not nothing and before_signature is not equal to prior_after:
+            call orm_fail with "migration registry" and "each migration's historical before schema must match the preceding after schema"
+        end check
+        check if (length of migration_spec.up_steps) is equal to 0:
+            call orm_fail with "migration registry" and "declare at least one up step; a scaffold is not an executable migration"
+        end check
+        for each direction_steps in [migration_spec.up_steps, migration_spec.down_steps]:
+            for each migration_step in direction_steps:
+                check if migration_step.operation is equal to "drop table" and migration_spec.irreversible_reason is equal to "":
+                    call orm_fail with "migration registry" and "dropping a table requires an explicit irreversible reason; a recreated empty table does not restore records"
+                end check
+                check if migration_step.operation is equal to "rebuild table":
+                    for each prior_field in migration_step.before_table.model_spec.fields:
+                        check if (contains of migration_step.source_fields and prior_field.field_name) is equal to no and migration_spec.irreversible_reason is equal to "":
+                            call orm_fail with "migration registry" and "discarding a column's values requires an explicit irreversible reason; adding an empty column back does not restore its values"
+                        end check
+                    end for
+                end check
+            end for
+        end for
+        store verified_checksum as orm_migration_checksum of migration_spec
+        change prior_after to stringify_json of (orm_schema_signatures of migration_spec.managed_after)
+        change previous_id to id_text
+        push with known_ids and id_text
+    end for
+    return known_ids
+end action
+
+define action called orm_migration_ledger_sql:
+    return "CREATE TABLE _orm_migrations (position INTEGER PRIMARY KEY, migration_id TEXT UNIQUE NOT NULL, migration_name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+end action
+
+define action called orm_migration_events_sql:
+    return "CREATE TABLE _orm_migration_events (event_id INTEGER PRIMARY KEY AUTOINCREMENT, migration_id TEXT NOT NULL, checksum TEXT NOT NULL, event_kind TEXT NOT NULL, recorded_at TEXT NOT NULL DEFAULT (datetime('now')))"
+end action
+
+define action called orm_migration_ensure_history with parameters session:
+    check if (orm_schema_exists of session and "_orm_migrations") is equal to no:
+        store created_ledger as orm_sql_execute of session and orm_migration_ledger_sql and []
+        store created_events as orm_sql_execute of session and orm_migration_events_sql and []
+    end check
+    return yes
+end action
+
+define action called orm_migration_expected_schema with parameters registry and applied_total:
+    check if (length of registry) is equal to 0:
+        return []
+    end check
+    check if applied_total is equal to 0:
+        store first_migration as registry[0]
+        return first_migration.managed_before
+    end check
+    store last_migration as registry[applied_total minus 1]
+    return last_migration.managed_after
+end action
+
+define action called orm_migration_schema_check with parameters session and registry and applied_total:
+    store expected_tables as orm_migration_expected_schema of registry and applied_total
+    store expected_names as []
+    for each table_spec in expected_tables:
+        push with expected_names and table_spec.model_spec.table_name
+    end for
+    store checked_tables as orm_schema_require of session and expected_tables
+    store inspected_names as []
+    for each migration_spec in registry:
+        for each historical_tables in [migration_spec.managed_before, migration_spec.managed_after]:
+            for each table_spec in historical_tables:
+                store table_name as table_spec.model_spec.table_name
+                check if (contains of expected_names and table_name) is equal to no and (contains of inspected_names and table_name) is equal to no:
+                    check if orm_schema_exists of session and table_name:
+                        call orm_fail with "schema drift" and ("unexpected managed table " with table_name with "; use an explicit supported legacy adoption or restore matching migration history")
+                    end check
+                    push with inspected_names and table_name
+                end check
+            end for
+        end for
+    end for
+    return yes
+end action
+
+define action called orm_migration_history with parameters session and registry:
+    store known_ids as orm_migration_registry_check of registry
+    store ledger_exists as orm_schema_exists of session and "_orm_migrations"
+    store events_exist as orm_schema_exists of session and "_orm_migration_events"
+    check if ledger_exists is not equal to events_exist:
+        call orm_fail with "migration history" and "one history table is missing; restore the matching database backup before proceeding"
+    end check
+    check if ledger_exists is equal to no:
+        return []
+    end check
+    store ledger_schema as orm_sql_query of session and "SELECT name,sql FROM sqlite_schema WHERE type='table' AND name IN ('_orm_migrations','_orm_migration_events') ORDER BY name" and []
+    for each schema_row in ledger_schema:
+        store expected_sql as orm_migration_ledger_sql
+        check if schema_row["name"] is equal to "_orm_migration_events":
+            change expected_sql to orm_migration_events_sql
+        end check
+        check if (orm_schema_normalize of schema_row["sql"]) is not equal to (orm_schema_normalize of expected_sql):
+            call orm_fail with "migration history" and "history table structure changed; restore matching history before proceeding"
+        end check
+    end for
+    store applied_rows as orm_sql_query of session and "SELECT position,migration_id,migration_name,checksum FROM _orm_migrations ORDER BY position" and []
+    check if (length of applied_rows) is greater than (length of registry):
+        call orm_fail with "migration history" and "an applied migration file is missing; restore the immutable registered version"
+    end check
+    store applied_ids as []
+    store row_position as 0
+    for each applied_row in applied_rows:
+        store migration_spec as registry[row_position]
+        check if applied_row["position"] is not equal to (row_position plus 1) or applied_row["migration_id"] is not equal to migration_spec.migration_id:
+            call orm_fail with "migration history" and "applied history is not a contiguous registered prefix; restore missing versions or matching history"
+        end check
+        check if applied_row["checksum"] is not equal to (orm_migration_checksum of migration_spec) or applied_row["migration_name"] is not equal to migration_spec.migration_name:
+            call orm_fail with "migration checksum" and "an applied migration changed; restore its original immutable source and author a new migration"
+        end check
+        push with applied_ids and migration_spec.migration_id
+        change row_position to row_position plus 1
+    end for
+    store event_rows as orm_sql_query of session and "SELECT migration_id,checksum,event_kind FROM _orm_migration_events ORDER BY event_id" and []
+    store replayed_ids as []
+    for each event_row in event_rows:
+        store event_id as event_row["migration_id"]
+        check if (contains of known_ids and event_id) is equal to no:
+            call orm_fail with "migration history" and "an event references a missing migration file; restore the complete immutable registry"
+        end check
+        store registered_position as 0
+        for each known_id in known_ids:
+            check if known_id is equal to event_id:
+                break
+            end check
+            change registered_position to registered_position plus 1
+        end for
+        store migration_spec as registry[registered_position]
+        check if event_row["checksum"] is not equal to (orm_migration_checksum of migration_spec):
+            call orm_fail with "migration checksum" and "a previously applied or rolled-back migration changed; restore its original immutable source"
+        end check
+        store event_kind as event_row["event_kind"]
+        check if event_kind is equal to "apply" or event_kind is equal to "adopt":
+            check if registered_position is not equal to (length of replayed_ids):
+                call orm_fail with "migration history" and "migration event order is inconsistent; restore matching history"
+            end check
+            push with replayed_ids and event_id
+        otherwise:
+            check if event_kind is not equal to "rollback" or (length of replayed_ids) is equal to 0:
+                call orm_fail with "migration history" and "unknown or unmatched rollback event; restore matching history"
+            end check
+            store prior_id as pop of replayed_ids
+            check if prior_id is not equal to event_id:
+                call orm_fail with "migration history" and "rollback events are out of order; restore matching history"
+            end check
+        end check
+    end for
+    check if (stringify_json of replayed_ids) is not equal to (stringify_json of applied_ids):
+        call orm_fail with "migration history" and "applied ledger and event history disagree; restore their matching backup"
+    end check
+    return applied_rows
+end action
+
+define action called orm_migration_target with parameters registry and target_id:
+    check if target_id is equal to "latest":
+        return length of registry
+    end check
+    check if target_id is equal to "zero":
+        return 0
+    end check
+    store migration_position as 0
+    for each migration_spec in registry:
+        change migration_position to migration_position plus 1
+        check if migration_spec.migration_id is equal to target_id:
+            return migration_position
+        end check
+    end for
+    call orm_fail with "migration target" and "target is not registered; use an exact migration ID, latest, or zero"
+end action
+
+define action called orm_migration_plan with parameters session and registry and target_id:
+    store conn as session.connection
+    // All reads use one SQLite snapshot, so a concurrent commit cannot pair an
+    // old ledger with a new schema and produce a false corruption diagnosis.
+    in transaction on conn:
+        store applied_rows as orm_migration_history of session and registry
+        store checked_schema as orm_migration_schema_check of session and registry and (length of applied_rows)
+        store target_position as orm_migration_target of registry and target_id
+        store pending_ids as []
+        store migration_position as 0
+        for each migration_spec in registry:
+            change migration_position to migration_position plus 1
+            check if migration_position is greater than (length of applied_rows) and migration_position is less than or equal to target_position:
+                push with pending_ids and migration_spec.migration_id
+            end check
+        end for
+        create new OrmMigrationPlan as migration_plan:
+            applied is applied_rows
+            pending is pending_ids
+            target_id is target_id
+        end
+        return migration_plan
+    end transaction
+end action
+
+define action called orm_migration_status with parameters session and registry:
+    return orm_migration_plan of session and registry and "latest"
+end action
+
+define action called orm_migration_run_step with parameters session and migration_step:
+    store operation as migration_step.operation
+    check if operation is equal to "create table":
+        return orm_schema_create of session and migration_step.after_table
+    end check
+    check if operation is equal to "drop table":
+        return orm_sql_execute of session and ("DROP TABLE " with (orm_quote of migration_step.before_table.model_spec.table_name)) and []
+    end check
+    check if operation is equal to "add column":
+        return orm_sql_execute of session and ("ALTER TABLE " with (orm_quote of migration_step.before_table.model_spec.table_name) with " ADD COLUMN " with (orm_schema_column of migration_step.column_spec)) and []
+    end check
+    check if operation is equal to "create index":
+        return orm_sql_execute of session and (orm_schema_index_sql of migration_step.after_table and migration_step.index_spec) and []
+    end check
+    check if operation is equal to "drop index":
+        return orm_sql_execute of session and ("DROP INDEX " with (orm_quote of migration_step.index_spec.index_name)) and []
+    end check
+    check if operation is equal to "rebuild table":
+        return orm_schema_rebuild of session and migration_step.before_table and migration_step.after_table and migration_step.source_fields and migration_step.target_fields
+    end check
+    check if operation is equal to "sql":
+        return orm_sql_execute of session and migration_step.sql_text and migration_step.bound_values
+    end check
+    call orm_fail with "migration step" and "unknown step; use a typed schema helper or explicit parameterized SQL"
+end action
+
+define action called orm_migration_record with parameters session and migration_spec and migration_position and event_kind:
+    store checksum_text as orm_migration_checksum of migration_spec
+    store recorded_migration as orm_sql_execute of session and "INSERT INTO _orm_migrations(position,migration_id,migration_name,checksum) VALUES (?,?,?,?)" and [migration_position, migration_spec.migration_id, migration_spec.migration_name, checksum_text]
+    store recorded_event as orm_sql_execute of session and "INSERT INTO _orm_migration_events(migration_id,checksum,event_kind) VALUES (?,?,?)" and [migration_spec.migration_id, checksum_text, event_kind]
+    return yes
+end action
+
+define action called orm_migrate with parameters session and registry and target_id:
+    store checked_plan as orm_migration_plan of session and registry and target_id
+    store target_position as orm_migration_target of registry and target_id
+    check if target_position is less than (length of checked_plan.applied):
+        call orm_fail with "migration target" and "up cannot roll back; use rollback_to or rollback_count explicitly"
+    end check
+    store conn as session.connection
+    store expected_floor as length of checked_plan.applied
+    repeat while yes:
+        store finished as no
+        in transaction on conn for schema changes:
+            // Another process may have progressed while this caller waited for
+            // the bounded native write lock. Re-read everything under that lock.
+            store applied_rows as orm_migration_history of session and registry
+            store checked_schema as orm_migration_schema_check of session and registry and (length of applied_rows)
+            check if (length of applied_rows) is greater than target_position or (length of applied_rows) is less than expected_floor:
+                call orm_fail with "migration concurrency" and "another runner moved history beyond this target or in the opposite direction; inspect status and retry the intended target"
+            end check
+            check if (length of applied_rows) is equal to target_position:
+                change finished to yes
+            otherwise:
+                store migration_spec as registry[(length of applied_rows)]
+                store history_ready as orm_migration_ensure_history of session
+                for each migration_step in migration_spec.up_steps:
+                    store step_result as orm_migration_run_step of session and migration_step
+                end for
+                store verified_schema as orm_migration_schema_check of session and registry and ((length of applied_rows) plus 1)
+                store recorded_migration as orm_migration_record of session and migration_spec and ((length of applied_rows) plus 1) and "apply"
+                change expected_floor to (length of applied_rows) plus 1
+            end check
+        end transaction
+        check if finished:
+            break
+        end check
+    end repeat
+    return orm_migration_status of session and registry
+end action
+
+define action called orm_rollback_to with parameters session and registry and target_id:
+    store current_plan as orm_migration_status of session and registry
+    store target_position as orm_migration_target of registry and target_id
+    check if target_position is greater than (length of current_plan.applied):
+        call orm_fail with "rollback target" and "target is newer than the current version; use migrate explicitly"
+    end check
+    // Preflight the complete requested range before making even one change.
+    store migration_position as 0
+    for each migration_spec in registry:
+        change migration_position to migration_position plus 1
+        check if migration_position is greater than target_position and migration_position is less than or equal to (length of current_plan.applied):
+            check if migration_spec.irreversible_reason is not equal to "" or (length of migration_spec.down_steps) is equal to 0:
+                call orm_fail with "irreversible migration" and (migration_spec.migration_id with ": " with migration_spec.irreversible_reason with "; restore a matching database and uploads backup instead")
+            end check
+        end check
+    end for
+    store conn as session.connection
+    store expected_ceiling as length of current_plan.applied
+    repeat while yes:
+        store finished as no
+        in transaction on conn for schema changes:
+            store applied_rows as orm_migration_history of session and registry
+            store verified_before as orm_migration_schema_check of session and registry and (length of applied_rows)
+            check if (length of applied_rows) is less than target_position or (length of applied_rows) is greater than expected_ceiling:
+                call orm_fail with "migration concurrency" and "another runner moved history beyond this target or in the opposite direction; inspect status and retry the intended target"
+            end check
+            check if (length of applied_rows) is equal to target_position:
+                change finished to yes
+            otherwise:
+                store migration_spec as registry[(length of applied_rows) minus 1]
+                check if migration_spec.irreversible_reason is not equal to "" or (length of migration_spec.down_steps) is equal to 0:
+                    call orm_fail with "irreversible migration" and "history changed while waiting for the lock; review rollback status again"
+                end check
+                for each migration_step in migration_spec.down_steps:
+                    store step_result as orm_migration_run_step of session and migration_step
+                end for
+                store verified_after as orm_migration_schema_check of session and registry and ((length of applied_rows) minus 1)
+                store removed_migration as orm_sql_execute of session and "DELETE FROM _orm_migrations WHERE migration_id=?" and [migration_spec.migration_id]
+                store recorded_event as orm_sql_execute of session and "INSERT INTO _orm_migration_events(migration_id,checksum,event_kind) VALUES (?,?,'rollback')" and [migration_spec.migration_id, (orm_migration_checksum of migration_spec)]
+                change expected_ceiling to (length of applied_rows) minus 1
+            end check
+        end transaction
+        check if finished:
+            break
+        end check
+    end repeat
+    return orm_migration_status of session and registry
+end action
+
+define action called orm_rollback_count with parameters session and registry and rollback_total:
+    store current_plan as orm_migration_status of session and registry
+    check if (typeof of rollback_total) is not equal to "Number" or rollback_total is less than 1 or rollback_total is greater than (length of current_plan.applied) or (floor of rollback_total) is not equal to rollback_total:
+        call orm_fail with "rollback count" and "use a positive whole count no larger than the applied migration count"
+    end check
+    store target_position as (length of current_plan.applied) minus rollback_total
+    store target_id as "zero"
+    check if target_position is greater than 0:
+        store target_migration as registry[target_position minus 1]
+        change target_id to target_migration.migration_id
+    end check
+    return orm_rollback_to of session and registry and target_id
+end action

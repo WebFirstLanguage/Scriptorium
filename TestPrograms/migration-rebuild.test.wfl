@@ -1,0 +1,92 @@
+include from "../tests/fixtures/migration-registry.wfl"
+
+describe "SQLite schema rebuild preservation":
+    test "an empty table retains its deleted AUTOINCREMENT high water through rebuild":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store initialized as orm_migrate of session and registry and "20260920000002"
+            store conn as session.connection
+            in transaction on conn:
+                store high_row as orm_sql_execute of session and "INSERT INTO items(id,title) VALUES(9007199254740998,'removed')" and []
+                store removed_row as orm_sql_execute of session and "DELETE FROM items" and []
+            end transaction
+            store rebuilt as orm_migrate of session and registry and "latest"
+            store inserted_row as orm_sql_execute of session and "INSERT INTO items(title) VALUES('after empty rebuild')" and []
+            store saved_rows as orm_sql_query of session and "SELECT CAST(id AS TEXT) AS id FROM items" and []
+            store saved_row as saved_rows[0]
+            expect saved_row["id"] to equal "9007199254740999"
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "rebuild preserves children extensions exact identities and deleted sequence high water":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store applied_plan as orm_migrate of session and registry and "20260920000002"
+            store conn as session.connection
+            in transaction on conn:
+                store child_table as orm_sql_execute of session and "CREATE TABLE extension_children(id INTEGER PRIMARY KEY,parent_id INTEGER REFERENCES items(id) ON DELETE CASCADE)" and []
+                store audit_table as orm_sql_execute of session and "CREATE TABLE extension_audit(title TEXT)" and []
+                store audit_trigger as orm_sql_execute of session and "CREATE TRIGGER extension_item_insert AFTER INSERT ON items BEGIN INSERT INTO extension_audit(title) VALUES (new.title); END" and []
+                store extra_index as orm_sql_execute of session and "CREATE INDEX extension_title_index ON items(title DESC)" and []
+                store parent_row as orm_sql_execute of session and "INSERT INTO items(id,title) VALUES (CAST(? AS INTEGER),?)" and ["9007199254740993", "retained"]
+                store child_row as orm_sql_execute of session and "INSERT INTO extension_children(id,parent_id) VALUES(1,CAST(? AS INTEGER))" and ["9007199254740993"]
+                store high_row as orm_sql_execute of session and "INSERT INTO items(id,title) VALUES(CAST(? AS INTEGER),?)" and ["9007199254740998", "deleted"]
+                store deleted_row as orm_sql_execute of session and "DELETE FROM items WHERE id=CAST(? AS INTEGER)" and ["9007199254740998"]
+            end transaction
+            store rebuilt as orm_migrate of session and registry and "latest"
+            expect length of rebuilt.applied to equal 3
+            store kept_children as orm_sql_query of session and "SELECT CAST(parent_id AS TEXT) AS parent_id FROM extension_children" and []
+            expect length of kept_children to equal 1
+            store kept_child as kept_children[0]
+            expect kept_child["parent_id"] to equal "9007199254740993"
+            store generated_row as orm_sql_execute of session and "INSERT INTO items(title) VALUES ('next')" and []
+            store generated_ids as orm_sql_query of session and "SELECT CAST(id AS TEXT) AS id FROM items WHERE title='next'" and []
+            store generated_id as generated_ids[0]
+            expect generated_id["id"] to equal "9007199254740999"
+            store audit_rows as orm_sql_query of session and "SELECT count(*) AS n FROM extension_audit WHERE title='next'" and []
+            store audit_row as audit_rows[0]
+            expect audit_row["n"] to equal 1
+            store index_rows as orm_sql_query of session and "SELECT name FROM sqlite_schema WHERE name='extension_title_index'" and []
+            expect length of index_rows to equal 1
+            expect length of (orm_sql_query of session and "PRAGMA foreign_key_check" and []) to equal 0
+            store reversed as orm_rollback_to of session and registry and "20260920000002"
+            expect length of reversed.applied to equal 2
+            expect length of (orm_sql_query of session and "SELECT * FROM extension_children" and []) to equal 1
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "a rejected rebuild rolls back schema data and history together and can recover":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store applied_plan as orm_migrate of session and registry and "latest"
+            store null_row as orm_sql_execute of session and "INSERT INTO items(title) VALUES(NULL)" and []
+            store refused as no
+            try:
+                store impossible as orm_rollback_count of session and registry and 1
+            when error:
+                change refused to yes
+                expect error_message contains "NOT NULL" to be yes
+            end try
+            expect refused to be yes
+            store checked_plan as orm_migration_status of session and registry
+            expect length of checked_plan.applied to equal 3
+            expect length of (orm_sql_query of session and "SELECT id FROM items WHERE title IS NULL" and []) to equal 1
+            expect orm_schema_exists of session and "_orm_rebuild_items" to be no
+            store repaired as orm_sql_execute of session and "UPDATE items SET title='repaired' WHERE title IS NULL" and []
+            store recovered as orm_rollback_count of session and registry and 1
+            expect length of recovered.applied to equal 2
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+end describe

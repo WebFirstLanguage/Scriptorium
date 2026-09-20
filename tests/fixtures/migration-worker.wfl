@@ -1,0 +1,58 @@
+include from "migration-registry.wfl"
+
+define action called migration_worker_signal with parameters signal_path:
+    open file at signal_path for writing as signal_file
+    try:
+        wait for write content "ready" into signal_file
+    finally:
+        close file signal_file
+    end try
+end action
+
+store database_path as args[0]
+store worker_mode as args[1]
+store ready_path as args[2]
+store registry as migration_fixture_registry of "fixture index source\n"
+store session as orm_open of database_path
+try:
+    check if worker_mode is equal to "apply":
+        call migration_worker_signal with ready_path
+        store migrated as orm_migrate of session and registry and args[3]
+        display "applied " with (length of migrated.applied)
+    otherwise:
+        store conn as session.connection
+        in transaction on conn for schema changes:
+            check if worker_mode is equal to "hold":
+                store created as orm_sql_execute of session and "CREATE TABLE abandoned_schema(value TEXT)" and []
+                store pending_row as orm_sql_execute of session and "INSERT INTO items(title) VALUES('uncommitted')" and []
+                store pending_event as orm_sql_execute of session and "INSERT INTO _orm_migration_events(migration_id,checksum,event_kind) VALUES('uncommitted','uncommitted','apply')" and []
+            otherwise:
+                // A controlled competing owner advances the same immutable
+                // steps and ledger while another process starts its request.
+                count from 2 to 3:
+                    store version_spec as registry[count minus 1]
+                    for each migration_step in version_spec.up_steps:
+                        store stepped as orm_migration_run_step of session and migration_step
+                    end for
+                    store verified as orm_migration_schema_check of session and registry and count
+                    store recorded as orm_migration_record of session and version_spec and count and "apply"
+                end count
+            end check
+            call migration_worker_signal with ready_path
+            store release_path as args[3]
+            store released as no
+            count from 1 to 300:
+                check if file exists at release_path:
+                    change released to yes
+                    break
+                end check
+                wait for 100 milliseconds
+            end count
+            check if released is equal to no:
+                call raise_error with "Fixture owner was not released before its 30-second bound"
+            end check
+        end transaction
+    end check
+finally:
+    call orm_close with session
+end try
