@@ -1,0 +1,2 @@
+display "synthetic child output"
+display current_directory

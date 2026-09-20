@@ -1,0 +1,15 @@
+// Loopback-only synthetic server. The parent owns and kills this process.
+listen on port 41868 as probe_server
+store readiness_path as args[0]
+open file at readiness_path for writing as readiness_file
+wait for write content "listening" into readiness_file
+close file readiness_file
+wait for request comes in on probe_server as incoming
+create map redirect_headers:
+    "Location" is "/final"
+    "Set-Cookie" is "sid=synthetic-session; Path=/; HttpOnly"
+end map
+respond to incoming with "redirect body" and status 302 and headers redirect_headers
+wait for request comes in on probe_server as final_incoming
+respond to final_incoming with "final response" and status 200
+close server probe_server

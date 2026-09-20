@@ -1,0 +1,33 @@
+// Required safety behavior, currently RED on WFL 26.9.12.
+// A returned validation failure is ordinary return, so the native transaction commits.
+// This rules out error-result returns as a substitute for a native raise/abort operation.
+store checkout_root as path_dirname of (path_dirname of script_directory)
+store probe_dir as path_join of checkout_root and "target" and "runtime-capability-results"
+create directory at probe_dir
+store probe_file as path_join of probe_dir and "transaction-validation.db"
+store probe_url as "sqlite://" with probe_file
+
+define action called save_then_reject with parameters conn:
+    in transaction on conn:
+        store inserted as execute conn with "INSERT INTO validation_probe (label) VALUES (?)" and parameters ["must roll back"]
+        // Simulates a later application validation failure; no native raise exists.
+        return no
+    end transaction
+end action
+
+describe "Required validation failure rollback capability":
+    test "a failed operation must not leave an earlier write committed":
+        open database at probe_url as conn
+        try:
+            store dropped as execute conn with "DROP TABLE IF EXISTS validation_probe"
+            store created as execute conn with "CREATE TABLE validation_probe (label TEXT NOT NULL)"
+            store outcome as save_then_reject of conn
+            expect outcome to be no
+            store rows as query conn with "SELECT label FROM validation_probe"
+            expect length of rows to equal 0
+        finally:
+            close database conn
+            delete file at probe_file
+        end try
+    end test
+end describe

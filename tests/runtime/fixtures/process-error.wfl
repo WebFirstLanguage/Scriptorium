@@ -1,0 +1,3 @@
+// A controlled runtime failure gives the parent real stderr to preserve.
+store numeric_result as 1 divided by 0
+display numeric_result

@@ -1,0 +1,114 @@
+// Passing characterization, including explicitly documented limitations.
+store checkout_root as path_dirname of (path_dirname of script_directory)
+store probe_dir as path_join of checkout_root and "target" and "runtime-capability-results"
+create directory at probe_dir
+store probe_file as path_join of probe_dir and "orm-native-baseline.db"
+store db_url as "sqlite://" with probe_file
+
+define action called insert_then_return_failure with parameters conn:
+    in transaction on conn:
+        store ins as execute conn with "INSERT INTO commit_return (label) VALUES ('retained')"
+        return no
+    end transaction
+end action
+
+create container ProbeRecord:
+    property title: Text
+    action rename needs new_title: Text:
+        change title to new_title
+    end
+end
+
+open database at db_url as conn
+try:
+    describe "ORM runtime capabilities":
+        test "typed containers mutate properties through actions":
+            create new ProbeRecord as a_record:
+                title is "before"
+            end
+            a_record.rename("after")
+            expect a_record.title to equal "after"
+        end test
+        test "map presence distinguishes missing and null; JSON null has same nothing comparison":
+            create map a_record:
+                "nullable" is nothing
+                "empty" is ""
+            end map
+            expect a_record contains "nullable" to be yes
+            expect a_record contains "absent" to be no
+            expect a_record["nullable"] to equal nothing
+            expect a_record["empty"] to equal ""
+            store json_null as parse_json of "null"
+            expect isnothing of json_null to be yes
+            expect json_null to equal nothing
+            display "nothing literal type: " with (typeof of nothing)
+            display "JSON null type: " with (typeof of json_null)
+        end test
+        test "parameters preserve injection payloads and null; sqlite schema is inspectable":
+
+            store dropped as execute conn with "DROP TABLE IF EXISTS parameter_case"
+            store made as execute conn with "CREATE TABLE parameter_case (id INTEGER PRIMARY KEY, title TEXT UNIQUE, note TEXT)"
+            store malicious_text as "x'; DROP TABLE parameter_case; --"
+            store ins as execute conn with "INSERT INTO parameter_case (title, note) VALUES (?, ?)" and parameters [malicious_text and nothing]
+            expect ins["affected_rows"] to equal 1
+            expect ins["last_insert_id"] to equal 1
+            store rows as query conn with "SELECT id, title, note FROM parameter_case WHERE title = ?" and parameters [malicious_text]
+            store a_row as rows[0]
+            expect a_row["note"] to equal nothing
+            expect a_row["title"] to equal malicious_text
+            store cols as query conn with "SELECT name, type, pk FROM pragma_table_info(?) ORDER BY cid" and parameters ["parameter_case"]
+            expect length of cols to equal 3
+            store schema_rows as query conn with "SELECT sql FROM sqlite_schema WHERE type = ? AND name = ?" and parameters ["table" and "parameter_case"]
+            expect length of schema_rows to equal 1
+
+        end test
+        test "failed DDL and ledger changes roll back together and original diagnostics propagate":
+
+            store dropped as execute conn with "DROP TABLE IF EXISTS atomic_ledger"
+            store dropped2 as execute conn with "DROP TABLE IF EXISTS atomic_new_table"
+            store made as execute conn with "CREATE TABLE atomic_ledger (version TEXT UNIQUE)"
+            store caught_message as ""
+            try:
+                in transaction on conn:
+                    store made2 as execute conn with "CREATE TABLE atomic_new_table (id INTEGER)"
+                    store ins as execute conn with "INSERT INTO atomic_ledger (version) VALUES ('v1')"
+                    store broken as execute conn with "INSERT INTO missing_required_table (id) VALUES (1)"
+                end transaction
+            when error:
+                change caught_message to error_message
+            end try
+            expect caught_message contains "missing_required_table" to be yes
+            store ledger_rows as query conn with "SELECT version FROM atomic_ledger"
+            expect length of ledger_rows to equal 0
+            store schema_rows as query conn with "SELECT name FROM sqlite_schema WHERE name = 'atomic_new_table'"
+            expect length of schema_rows to equal 0
+
+        end test
+        test "returning a validation failure is a successful transaction and commits":
+
+            store dropped as execute conn with "DROP TABLE IF EXISTS commit_return"
+            store made as execute conn with "CREATE TABLE commit_return (label TEXT)"
+            store returned as insert_then_return_failure of conn
+            expect returned to be no
+            store rows as query conn with "SELECT label FROM commit_return"
+            expect length of rows to equal 1
+
+        end test
+        test "integer identifiers above 2 to 53 lose precision on reads":
+
+            store rows as query conn with "SELECT 9007199254740993 AS precise_id, CAST(9007199254740993 AS TEXT) AS text_id"
+            store a_row as rows[0]
+            expect a_row["text_id"] to equal "9007199254740993"
+            display "integer mapped to WFL: " with a_row["precise_id"]
+            store roundtrip as query conn with "SELECT CAST(? AS TEXT) AS bound_id" and parameters [a_row["precise_id"]]
+            store bound_row as roundtrip[0]
+            expect bound_row["bound_id"] to equal "9007199254740992"
+
+        end test
+    end describe
+
+
+finally:
+    close database conn
+    delete file at probe_file
+end try

@@ -1,0 +1,9 @@
+# Dedicated capability probes; application process execution remains disabled.
+allow_shell_execution = true
+shell_execution_mode = allowlist_only
+allowed_shell_commands = wfl
+timeout_seconds = 20
+logging_enabled = false
+debug_report_enabled = false
+kill_on_shutdown = true
+web_server_bind_address = 127.0.0.1
