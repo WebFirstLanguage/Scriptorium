@@ -122,16 +122,28 @@ evidence that the media correction works, not isolated deliberate-failure proof.
 
 A fourth upstream change,
 [WFL #741](https://github.com/WebFirstLanguage/wfl/pull/741) at
-`68c466504610cf5bfff26e8755f3b6064ceab2a2`, is being validated: an explicit finite
+`358dc9eb15f61152f75f816d9e51c396cd24dd77`, has passed independent review and all
+exact-head CI checks. It adds an explicit finite
 `--execution-timeout` option for the shared invocation budget. The prepared
 complete-suite command is `wfl --execution-timeout 1200 scripts/run_tests.wfl`.
 It preserves existing per-suite timeouts and child process limits. Publication
 of a runtime supporting this option and the final remote Red/Green are pending.
 Independent technical review found no remaining source or fixture blocker;
-15 fast WFL cases, a real 305-second WFL boundary assertion, 139 existing Rust
-compatibility tests, formatting, strict Clippy and 36 documentation checks passed
-locally. Exact-head upstream CI is
-[35509162373](https://github.com/WebFirstLanguage/wfl/actions/runs/35509162373).
+25 fast WFL cases, a real 305-second WFL boundary assertion, 2414 existing Rust
+tests (27 existing ignored), formatting, strict Clippy and 36 documentation checks passed
+locally. Exact-head upstream CI
+[35510552984](https://github.com/WebFirstLanguage/wfl/actions/runs/35510552984),
+Docker validation, configuration lint and CodeQL all passed. Both integration
+jobs passed 164 WFL programs, 36 documentation checks and three web checks;
+24 existing integration skips remain recorded. Program sweeps passed 188 on
+Linux and 187 on Windows, with zero failures or timeouts. All seven new CLI
+budget suites ran on both platforms. Independent log inspection verified the
+real long-boundary assertion passed after 305.009 seconds on Linux and 305.161
+seconds on Windows. These jobs tested merge checkout
+`23a523bfcfe3d5015b1ab3da6dbb3272512f769f` containing the exact PR head.
+The user approved this additional merge and publication. PR #741 is merged as
+`3720dd74c82f4a1354aa64cfe66260ec3eccba93`; replacement official nightly
+publication remains pending.
 
 The prepared command completed locally with the reviewed CLI candidate:
 **42 suites, 41 passed, one intentional failure**, exit 1. Only
@@ -146,6 +158,34 @@ documentation changes; test scenarios were unchanged. The log
 2026-09-20, approximately 509 seconds by file metadata. Repository hygiene passed
 with 180 paths including the intentional suite. This proves local consumer
 behavior beyond 300 seconds, not a final official-image CI pass.
+
+Subsequent review of #741 found that a shorter override could alter server HTTP
+timeouts, a final duration wait could miss expiry, and dump modes could ignore
+a misplaced option. The reviewed remedy preserves the original per-operation
+duration, checks sleeping/receiving waits without dropping active WFL handlers,
+and rejects the misplaced option before output. New WFL regressions cover
+buffered and streamed HTTP, final waits, owned-child cleanup observed before any
+test-side process reap, WebSocket listener release, and main-loop exemption.
+All 25 focused WFL cases and the fresh 305-second boundary check passed locally.
+
+The remedy at WFL `30ed9462` was retested against clean Scriptorium source
+`df8039cc252e2e48772ed88b9d273b98e30a67c5` with the same complete command:
+**42 suites, 41 functional passes, one deliberate failure**, exit 1. The WFL
+26.9.15 candidate executable SHA256 is
+`c0619c544b09551ce7988f58a564f50ff04e48a5e94a6f903c08a141b911c516`.
+Log `target/full-cli-budget-reviewed-red.log` spans 12:16:55–12:20:17 UTC,
+approximately 202 seconds. This latter consumer run does not itself prove the
+300-second boundary; the separately repeated long WFL test does.
+
+The first #741 CI run,
+[35509162373](https://github.com/WebFirstLanguage/wfl/actions/runs/35509162373),
+failed in an unchanged Windows trusted-proxy fixture when its previously probed
+port was occupied before the WFL server bound it. Linux integration was canceled
+by matrix fail-fast; neither long-duration step ran. The final fixture now binds
+port zero and discovers the actual owned address, retaining all existing
+assertions; its seven cases passed locally and in the successful final Windows
+integration job. Official publication remains required; no failed or canceled
+job is counted as a pass.
 
 - Push an actual intentionally failing WFL test, observe the new runner and
   its Blacksmith CI job fail, then remove it and verify a clean run.

@@ -47,7 +47,10 @@ and final revision provenance remain pending.
 The user approved the initial three upstream merges and official nightly
 publication. Those PRs are merged and official nightly 26.9.14 is published.
 Linux verification exposed the runtime's 300-second whole-command cap; a fourth
-upstream change adds an explicit finite invocation budget. Its review, remote
-validation and publication remain pending, along with the final Scriptorium
+upstream change adds an explicit finite invocation budget. Its review and all
+exact-head CI passed, including real 305-second assertions on Linux and Windows.
+The user approved its merge and replacement nightly publication; #741 is merged
+as `3720dd74c82f4a1354aa64cfe66260ec3eccba93`. Publication remains pending,
+along with the final Scriptorium
 acceptance checks listed in `orm-verification.md`.
 Scriptorium merging and production deployment remain outside this deliverable.
