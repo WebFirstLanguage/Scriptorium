@@ -54,6 +54,31 @@ assertion to make the currently unsafe alternative green. Neither failure is
 a parser error. They do not assert that the runtime promises Boolean-return
 rollback or safe arbitrary table rebuilds today.
 
+## Remote nightly evidence
+
+[Blacksmith run 35499009581](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35499009581)
+tested Scriptorium `a81ecf9c2c68784f3deace8b3521feae762e51ff` and pinned Scribe
+`93d62af5a6ed6c3ce257ef888107fc3ca1e2dc1d`. The job freshly pulled the nightly,
+resolved and ran `bsbyrdwfl/wfl@sha256:7ddc51e6320affa7cfe26263fece590ddbdebe5582659b7e660ca823ed3ddbf1`,
+which reported **WFL 26.9.12**. Each suite ran in WFL in a disposable container;
+no Python test implementation or runner was used by this capability workflow.
+
+The native baseline passed 6/6. Transaction validation failed 1/1 with a
+retained row; the rebuild failed 1/1 with its extension row deleted; HTTP failed
+1/1 with final status 200 and no intermediate cookie; process control passed
+1/4 and failed cwd isolation, post-wait output, and stderr preservation. All
+failed assertions produced exit 1 and failed their CI jobs. All container cleanup
+steps passed. This is prerequisite Red evidence, not successful validation of
+the requested ORM or complete converted test suite.
+
+The user subsequently authorized upstream WFL fixes and separate prerequisite
+PRs, followed by completion of Scriptorium. Work is isolated into transaction,
+HTTP response control, and process lifecycle branches. Existing Scriptorium
+application code and Python checks remain unchanged until their replacements
+can meet the full contracts. The existing five WFL application suites also
+passed locally on 26.9.12 (60 tests); the runtime emitted its existing included-
+action/type-analysis warnings. These local baseline results are not final PR CI.
+
 ## Capabilities available now
 
 - Typed containers, mutable instance properties through actions, inheritance,

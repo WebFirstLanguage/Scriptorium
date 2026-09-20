@@ -1,0 +1,95 @@
+include from "../lib/orm/types.wfl"
+
+describe "ORM declaration and value contracts":
+    test "identifiers accept ASCII names but reject SQL fragments":
+        expect orm_identifier_problem of "entries_2026" to equal ""
+        expect orm_identifier_problem of "_private" to equal ""
+        expect orm_identifier_problem of "a.b" to equal "use an ASCII letter or underscore followed by ASCII letters, digits, or underscores"
+        expect orm_identifier_problem of "name; DROP TABLE users" to equal "use an ASCII letter or underscore followed by ASCII letters, digits, or underscores"
+        expect orm_identifier_problem of "9name" to equal "use an ASCII letter or underscore followed by ASCII letters, digits, or underscores"
+        expect orm_identifier_problem of "" to equal "use an ASCII letter or underscore followed by ASCII letters, digits, or underscores"
+    end test
+
+    test "integer identities are exact canonical text":
+        expect orm_identity_problem of "9007199254740993" to equal ""
+        expect orm_identity_problem of "9223372036854775807" to equal ""
+        expect orm_identity_problem of "-9223372036854775808" to equal ""
+        expect orm_identity_problem of "9223372036854775808" to equal "identity is outside SQLite's signed 64-bit range"
+        expect orm_identity_problem of "-9223372036854775809" to equal "identity is outside SQLite's signed 64-bit range"
+        expect orm_identity_problem of "01" to equal "use canonical integer text without spaces, a plus sign, or leading zeros"
+        expect orm_identity_problem of "1.5" to equal "use canonical integer text without spaces, a plus sign, or leading zeros"
+        expect orm_identity_problem of "-0" to equal "use canonical integer text without spaces, a plus sign, or leading zeros"
+    end test
+
+    test "nullable text distinguishes null from empty text and other types":
+        create new OrmField as caption:
+            field_name is "caption"
+            value_type is "text"
+            nullable is yes
+        end
+        expect orm_value_problem of caption and nothing to equal ""
+        expect orm_value_problem of caption and "" to equal ""
+        expect orm_value_problem of caption and 7 to equal "expected text"
+        create new OrmField as title_field:
+            field_name is "title"
+            value_type is "text"
+        end
+        expect orm_value_problem of title_field and nothing to equal "null is not allowed; supply a value or omit the field to use its declared default"
+    end test
+
+    test "integer arithmetic values reject fractions and imprecise numbers":
+        create new OrmField as quantity:
+            field_name is "quantity"
+            value_type is "integer"
+        end
+        expect orm_value_problem of quantity and 12 to equal ""
+        expect orm_value_problem of quantity and -12 to equal ""
+        expect orm_value_problem of quantity and 1.5 to equal "expected a whole number in the exactly representable range"
+        expect orm_value_problem of quantity and "12" to equal "expected a whole number in the exactly representable range"
+        expect orm_value_problem of quantity and 9007199254740992 to equal "expected a whole number in the exactly representable range"
+    end test
+
+    test "boolean and number fields do not coerce strings":
+        create new OrmField as enabled_field:
+            field_name is "enabled"
+            value_type is "boolean"
+        end
+        create new OrmField as score_field:
+            field_name is "score"
+            value_type is "number"
+        end
+        expect orm_value_problem of enabled_field and yes to equal ""
+        expect orm_value_problem of enabled_field and 1 to equal "expected boolean"
+        expect orm_value_problem of enabled_field and "yes" to equal "expected boolean"
+        expect orm_value_problem of score_field and 1.25 to equal ""
+        expect orm_value_problem of score_field and "1.25" to equal "expected a finite number"
+    end test
+
+    test "declarations check defaults, generated keys and supported types":
+        create new OrmField as key_field:
+            field_name is "entry_id"
+            value_type is "identity"
+            primary_key is yes
+            generated is yes
+        end
+        expect orm_field_problem of key_field to equal ""
+        create new OrmField as bad_key:
+            field_name is "entry_id"
+            value_type is "text"
+            generated is yes
+        end
+        expect orm_field_problem of bad_key to equal "generated fields must be non-null identity primary keys"
+        create new OrmField as bad_default:
+            field_name is "label"
+            value_type is "text"
+            has_default is yes
+            default_value is 3
+        end
+        expect orm_field_problem of bad_default to equal "invalid default: expected text"
+        create new OrmField as unknown_type:
+            field_name is "payload"
+            value_type is "anything"
+        end
+        expect orm_field_problem of unknown_type to equal "supported field types are text, integer, number, boolean, and identity"
+    end test
+end describe
