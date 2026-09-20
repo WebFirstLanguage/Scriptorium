@@ -156,11 +156,13 @@ define action called orm_compile_select with parameters requested and result_kin
             check if order_spec.direction is equal to "descending":
                 change suffix to " DESC"
             end check
-            push with ordering_parts and ((orm_quote of order_spec.field_name) with suffix)
+            // Qualify the stored column: an exact-text projection may use the
+            // same alias, and SQLite resolves an unqualified ORDER BY to it.
+            push with ordering_parts and ((orm_quote of requested.model_spec.table_name) with "." with (orm_quote of order_spec.field_name) with suffix)
         end for
         store key_spec as orm_primary_field of requested.model_spec
         check if (contains of ordered_fields and key_spec.field_name) is equal to no:
-            push with ordering_parts and ((orm_quote of key_spec.field_name) with " ASC")
+            push with ordering_parts and ((orm_quote of requested.model_spec.table_name) with "." with (orm_quote of key_spec.field_name) with " ASC")
         end check
         change sql_text to sql_text with " ORDER BY " with (join of ordering_parts and ", ") with " LIMIT ? OFFSET ?"
         push with bound_values and requested.page_limit

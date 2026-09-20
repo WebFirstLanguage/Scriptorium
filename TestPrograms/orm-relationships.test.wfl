@@ -1,0 +1,121 @@
+include from "../lib/orm/relationships.wfl"
+
+create new OrmField as key_spec:
+    field_name is "id"
+    value_type is "identity"
+    primary_key is yes
+end
+create new OrmField as name_spec:
+    field_name is "name"
+end
+create new OrmField as owner_spec:
+    field_name is "author_id"
+    value_type is "identity"
+    nullable is yes
+end
+create new OrmModel as authors:
+    table_name is "authors"
+    fields is [key_spec and name_spec]
+end
+create new OrmModel as notes:
+    table_name is "notes"
+    fields is [key_spec and owner_spec]
+end
+create new OrmRelationship as author_notes:
+    relation_name is "notes"
+    related_model is notes
+    local_field is "id"
+    related_field is "author_id"
+    many is yes
+end
+authors.relate(author_notes)
+create new OrmRelationship as note_author:
+    relation_name is "author"
+    related_model is authors
+    local_field is "author_id"
+    related_field is "id"
+end
+notes.relate(note_author)
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "orm-relationships"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "relationships.db"
+store fixture_session as orm_open of database_path
+store conn as fixture_session.connection
+try:
+    call orm_sql_execute with fixture_session and "DROP TABLE IF EXISTS notes" and []
+    call orm_sql_execute with fixture_session and "DROP TABLE IF EXISTS authors" and []
+    call orm_sql_execute with fixture_session and "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL)" and []
+    call orm_sql_execute with fixture_session and "CREATE TABLE notes (id INTEGER PRIMARY KEY, author_id INTEGER)" and []
+    call orm_sql_execute with fixture_session and "WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM n WHERE id < 101) INSERT INTO authors SELECT id, 'author-' || id FROM n" and []
+    call orm_sql_execute with fixture_session and "INSERT INTO notes VALUES (1, 1), (2, 1), (3, 101), (4, 999), (5, NULL)" and []
+
+    describe "Explicit and batched relationships":
+        test "collection loading uses two queries for 101 distinct parent keys":
+            store session as orm_borrow of conn
+            store requested as orm_query of authors
+            call orm_page with requested and 1000 and 0
+            store author_records as orm_find of session and requested
+            expect length of author_records to equal 101
+            store before_queries as session.query_count
+            call orm_load with session and author_records and "notes"
+            expect session.query_count minus before_queries to equal 2
+            store first_notes as orm_related of author_records[0] and "notes"
+            store last_notes as orm_related of author_records[100] and "notes"
+            store empty_notes as orm_related of author_records[50] and "notes"
+            expect length of first_notes to equal 2
+            expect length of last_notes to equal 1
+            expect length of empty_notes to equal 0
+            expect orm_get of first_notes[0] and "id" to equal "1"
+            expect orm_get of first_notes[1] and "id" to equal "2"
+            expect session.query_count minus before_queries to equal 2
+        end test
+
+        test "single-record loads preserve orphan and null behavior with no lazy SQL":
+            store session as orm_borrow of conn
+            store note_records as orm_find of session and (orm_query of notes)
+            store before_queries as session.query_count
+            store rejected as no
+            try:
+                store unexpected as orm_related of note_records[0] and "author"
+            when error:
+                change rejected to yes
+                expect error_message contains "relationship is not loaded" to be yes
+            end try
+            expect rejected to be yes
+            expect session.query_count to equal before_queries
+            call orm_load with session and note_records and "author"
+            expect session.query_count minus before_queries to equal 1
+            store first_author as orm_related of note_records[0] and "author"
+            expect orm_get of first_author and "name" to equal "author-1"
+            expect orm_related of note_records[3] and "author" to equal nothing
+            expect orm_related of note_records[4] and "author" to equal nothing
+            expect session.query_count minus before_queries to equal 1
+        end test
+
+        test "an empty batch costs no queries and missing projected keys fail before SQL":
+            store session as orm_borrow of conn
+            store before_queries as session.query_count
+            store no_records as orm_load of session and [] and "notes"
+            expect length of no_records to equal 0
+            expect session.query_count to equal before_queries
+            store requested as orm_query of authors
+            call orm_select with requested and ["name"]
+            call orm_page with requested and 1 and 0
+            store projected as orm_find of session and requested
+            change before_queries to session.query_count
+            store rejected as no
+            try:
+                call orm_load with session and projected and "notes"
+            when error:
+                change rejected to yes
+                expect error_message contains "field is missing" to be yes
+            end try
+            expect rejected to be yes
+            expect session.query_count to equal before_queries
+        end test
+    end describe
+finally:
+    call orm_close with fixture_session
+    delete file at database_path
+end try
