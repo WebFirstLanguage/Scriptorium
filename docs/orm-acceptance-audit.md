@@ -38,7 +38,7 @@ and final revision provenance remain pending.
 | Verified database-plus-uploads backup/restore | `tests/integration/recovery.test.wfl` stops the owner, copies complete state, restores, then checks HTTP/auth/upload/integrity/FK behavior |
 | Every test, fixture, helper and driver is WFL | Python runner, two Python tooling suites and Python port suite removed; WFL 8+28 behavior mapping plus strengthened diagnostics and default-discovery cases |
 | Non-test Python checker remains only as a subject | `scripts/check_repo_hygiene.py` is invoked by WFL hygiene assertions and the existing governance utility step |
-| Complete suite includes pinned Scribe | `wfl --execution-timeout 1200 scripts/run_tests.wfl` discovers application, tooling, integration, runtime probes, examples and an isolated copy of pinned Scribe; publication of the explicit invocation-budget option is pending |
+| Complete suite includes pinned Scribe | `wfl --execution-timeout 1200 scripts/run_tests.wfl` discovers application, tooling, integration, runtime probes, examples and an isolated copy of pinned Scribe; official nightly 26.9.16 includes the required invocation-budget option |
 | Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; deliberate commit `b9e7903` produces local 23-pass/one-fail exit 1; remote assertion-failure proof and removal remain required |
 | Keep Linux/Windows governance and Blacksmith nightly | Updated Governance provisions current nightly assets on both platforms; WFL job freshly resolves/pins Docker digest and records runtime/source revisions |
 | Independent review and repaired findings | `orm-independent-review.md`, `independent-migration-review.md`, `runtime-review.md`, migration safety regressions and HTTP evidence distinguish source review from Maintainer approval; `type-analysis-review.md` records remaining runtime static-analysis diagnostics honestly |
@@ -50,7 +50,7 @@ Linux verification exposed the runtime's 300-second whole-command cap; a fourth
 upstream change adds an explicit finite invocation budget. Its review and all
 exact-head CI passed, including real 305-second assertions on Linux and Windows.
 The user approved its merge and replacement nightly publication; #741 is merged
-as `3720dd74c82f4a1354aa64cfe66260ec3eccba93`. Publication remains pending,
-along with the final Scriptorium
-acceptance checks listed in `orm-verification.md`.
+as `3720dd74c82f4a1354aa64cfe66260ec3eccba93`. Official nightly 26.9.16 at
+`23c1a4577da68d853fa30c49a17773427471eca4` has published successfully. The final
+Scriptorium acceptance checks listed in `orm-verification.md` remain pending.
 Scriptorium merging and production deployment remain outside this deliverable.

@@ -59,9 +59,9 @@ The subprocess wait limit is separate from WFL's whole-invocation execution
 budget. Official WFL 26.9.14 clamps `timeout_seconds` to at most 300 seconds;
 zero becomes one second, and that version provides no CLI timeout override.
 Accordingly `scripts/.wflcfg` states 300 instead of the ineffective 3600.
-That correction changes no effective behavior. The next upstream remedy adds
-an explicit finite invocation option, used by the complete command as
-`wfl --execution-timeout 1200 scripts/run_tests.wfl`; its official publication
+That correction changes no effective behavior. Official WFL 26.9.16 adds an
+explicit finite invocation option, used by the complete command as
+`wfl --execution-timeout 1200 scripts/run_tests.wfl`; its verified publication
 and final remote acceptance are tracked in `orm-verification.md`. Each child
 still has its own runtime deadline and bounded subprocess wait. The runner's
 `--timeout` option does not extend either runtime deadline.

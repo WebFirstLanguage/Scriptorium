@@ -71,9 +71,10 @@ Scriptorium root so relative includes, templates, and assets resolve correctly.
 
 The ORM and test suites additionally require application errors, pinned schema
 transactions, HTTP redirect/header controls and owned process completion.
-Official nightly 26.9.14 at `8d82d785` contains those capabilities; official
-26.9.12 does not. The complete Linux runner also requires the explicit
-`--execution-timeout` invocation option, whose official publication is pending.
+Official nightly 26.9.16 at `23c1a457` contains those capabilities and the explicit
+`--execution-timeout` invocation option required by the complete Linux runner.
+Official 26.9.12 lacks the application/test prerequisites; 26.9.14 lacks the
+explicit invocation-budget option.
 Record source revision as well as the version:
 [the verification record](docs/orm-verification.md) identifies the published
 artifacts and final CI evidence.

@@ -214,8 +214,9 @@ records runtime/Scriptorium/Scribe versions, and runs
 `wfl --execution-timeout 1200 scripts/run_tests.wfl`
 in that resolved container. A read-only source mount is copied into a disposable
 writable checkout. Suite, Scribe-copy and HTTP orchestration are WFL. The Update
-Scribe generated PR checklist uses these same commands. Final remote runtime
-acceptance is pending until a published nightly contains the upstream remedies.
+Scribe generated PR checklist uses these same commands. Official nightly
+26.9.16 contains the reviewed upstream remedies, including the explicit finite
+invocation budget; final remote acceptance is tracked in `orm-verification.md`.
 
 The hygiene profile now requires the WFL runner/helpers/config and both tooling
 suites. Guidance uses the same complete/focused commands. The examples directory

@@ -6,7 +6,34 @@ tests does not establish that the published nightly supports this change.
 
 ## Runtime prerequisites
 
-All three separate upstream changes have independent technical review,
+The replacement official nightly
+[35512196018](https://github.com/WebFirstLanguage/wfl/actions/runs/35512196018)
+completed successfully at source `23c1a4577da68d853fa30c49a17773427471eca4`,
+version **26.9.16**. It contains all four reviewed and approved upstream changes,
+including #741's explicit finite invocation budget. Its version-only commit is
+the direct child of #741's merge `3720dd74c82f4a1354aa64cfe66260ec3eccba93`;
+tag `v26.9.16` resolves to that same source.
+
+The published image is
+`bsbyrdwfl/wfl@sha256:1092a0c557731113f08673c764e0deb9e0b053992b4488974863f0a8d692db91`.
+Independent inspection of the Docker publication job verified version, source,
+both current tags and all five consumer checks, including assertion-failure
+exit 1. Both native packaging jobs and the complete release gates passed.
+Each platform's integration job passed 164 WFL programs, 36 documentation
+checks and three web checks, including the real 305-second assertion.
+
+The exact governance provisioning script verified the fresh canonical manifest,
+immutable Windows MSI sidecar and downloaded bytes, extracted without installing,
+and confirmed version 26.9.16. MSI SHA256:
+`73db4e8b9f725b6e1953ba453ca972e659a0388e0d343d4afea3b13fb8cfddec`.
+Extracted executable SHA256:
+`32375058e0111f6c159144a8ffa9bd5b3a3bde81f578eca015149053ea4c6cbb`.
+The complete Scriptorium command can now run against the official runtime;
+the isolated remote deliberate-failure proof and final clean pass remain pending.
+
+### Initial publication history
+
+The initial three separate upstream changes have independent technical review,
 successful exact-head remote CI and approved merges. Official nightly
 [35506079498](https://github.com/WebFirstLanguage/wfl/actions/runs/35506079498)
 completed successfully for their combined source
@@ -126,8 +153,8 @@ A fourth upstream change,
 exact-head CI checks. It adds an explicit finite
 `--execution-timeout` option for the shared invocation budget. The prepared
 complete-suite command is `wfl --execution-timeout 1200 scripts/run_tests.wfl`.
-It preserves existing per-suite timeouts and child process limits. Publication
-of a runtime supporting this option and the final remote Red/Green are pending.
+It preserves existing per-suite timeouts and child process limits. Official
+26.9.16 now contains this option; final Scriptorium remote Red/Green is pending.
 Independent technical review found no remaining source or fixture blocker;
 25 fast WFL cases, a real 305-second WFL boundary assertion, 2414 existing Rust
 tests (27 existing ignored), formatting, strict Clippy and 36 documentation checks passed
@@ -142,8 +169,8 @@ real long-boundary assertion passed after 305.009 seconds on Linux and 305.161
 seconds on Windows. These jobs tested merge checkout
 `23a523bfcfe3d5015b1ab3da6dbb3272512f769f` containing the exact PR head.
 The user approved this additional merge and publication. PR #741 is merged as
-`3720dd74c82f4a1354aa64cfe66260ec3eccba93`; replacement official nightly
-publication remains pending.
+`3720dd74c82f4a1354aa64cfe66260ec3eccba93`; the replacement official nightly
+publication is verified above.
 
 The prepared command completed locally with the reviewed CLI candidate:
 **42 suites, 41 passed, one intentional failure**, exit 1. Only
@@ -184,8 +211,8 @@ port was occupied before the WFL server bound it. Linux integration was canceled
 by matrix fail-fast; neither long-duration step ran. The final fixture now binds
 port zero and discovers the actual owned address, retaining all existing
 assertions; its seven cases passed locally and in the successful final Windows
-integration job. Official publication remains required; no failed or canceled
-job is counted as a pass.
+integration job. The replacement official publication also passed; no failed
+or canceled job is counted as a pass.
 
 - Push an actual intentionally failing WFL test, observe the new runner and
   its Blacksmith CI job fail, then remove it and verify a clean run.

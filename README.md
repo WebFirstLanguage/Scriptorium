@@ -50,12 +50,12 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 ## Quick start
 
 You need the WFL interpreter (`wfl`) on your PATH. The verified official runtime
-is nightly **26.9.14** from source `8d82d785` (or a newer runtime retaining its
-application-error, schema-transaction, HTTP and owned-process capabilities).
+is nightly **26.9.16** from source `23c1a457` (or a newer runtime retaining its
+application-error, schema-transaction, HTTP, owned-process and finite invocation-budget capabilities).
 Official 26.9.12 lacks those prerequisites. See the
 [runtime verification record](docs/orm-verification.md) for immutable provenance.
-The complete Linux test command additionally needs the `--execution-timeout`
-option; its upstream validation and official publication are pending.
+The complete test command uses the published `--execution-timeout` option to
+give the runner a finite 20-minute budget while preserving per-suite deadlines.
 Scriptorium keeps the
 [Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
 submodule, so clone with submodules:
