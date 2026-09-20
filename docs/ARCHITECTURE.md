@@ -15,7 +15,7 @@ reads as deliberate rather than accidental.
 
 ```
 Browser
-   │  HTTP (127.0.0.1:8080)
+   │  HTTP (127.0.0.1:8080 by default)
    ▼
 main.wfl ── listen on port ── main loop: wait for request ── route ──┐
    │                                                                  │
@@ -60,6 +60,15 @@ main.wfl ── site_ext.wfl  (+ defines the router and every request handler)
 - **main.wfl** — boot (open DB, migrate, backfill `installed` when users
   already exist), the request loop, the `route`-based dispatcher with the
   first-run lock, and all handler actions.
+
+## Network configuration
+
+WFL reads `web_server_bind_address` and TLS settings from `.wflcfg`. Scriptorium
+reads `web_server_port` itself at boot, like `data_dir`, and passes the resolved
+port to `listen`. The default is 8080; the configured value must be a whole
+number from 1 to 65535. A missing file or setting, or an empty, malformed,
+fractional, or out-of-range value, falls back to 8080. Changes require a restart.
+The shared bind address remains `127.0.0.1`.
 
 ## Request lifecycle
 

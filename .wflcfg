@@ -1,4 +1,4 @@
-# Scriptorium runtime configuration (WFL settings)
+# Scriptorium configuration (WFL runtime and application settings)
 timeout_seconds = 60
 logging_enabled = false
 debug_report_enabled = false
@@ -8,6 +8,11 @@ log_level = info
 #   127.0.0.1  -> localhost only (default, safest for development)
 #   0.0.0.0    -> listen on all interfaces (use behind a reverse proxy)
 web_server_bind_address = 127.0.0.1
+
+# HTTP port, read by Scriptorium at boot rather than by the WFL runtime.
+# Use a whole number from 1 to 65535. Missing or invalid values use 8080.
+# Restart Scriptorium after changing it.
+web_server_port = 8080
 
 # To terminate TLS directly in Scriptorium, point these at your PEM files and
 # start with a `listen ... secured` port (see docs/ARCHITECTURE.md).

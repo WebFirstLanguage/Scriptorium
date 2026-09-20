@@ -157,6 +157,20 @@ define action called config_value_from with parameters cfg_text and cfg_key and 
     return fallback
 end action
 
+// config_port_from: resolve Scriptorium's HTTP port from .wflcfg text.
+// Missing or invalid values preserve the default listener on port 8080.
+define action called config_port_from with parameters cfg_text:
+    store raw_port as config_value_from of cfg_text and "web_server_port" and "8080"
+    store configured_port as to_int of raw_port and 8080
+    check if (configured_port is less than 1) or (configured_port is greater than 65535):
+        return 8080
+    end check
+    check if configured_port is not equal to (floor of configured_port):
+        return 8080
+    end check
+    return configured_port
+end action
+
 // install_validate: first-run installer field checks. Pure (no I/O).
 // Title and username are trimmed; passwords are compared as submitted.
 define action called install_validate with parameters site_title and username and password and password_confirm:

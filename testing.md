@@ -105,9 +105,22 @@ pin changes and changes affecting Scribe integration. CMS-specific Scribe
 regressions remain in `TestPrograms/scribe.test.wfl` even when upstream tests
 also cover related behavior.
 
+The HTTP port configuration checks start disposable Scriptorium processes and
+exercise `/install` using synthetic temporary databases:
+
+```sh
+python -m unittest discover -s tests/integration -v
+```
+
+These checks require WFL on `PATH` (or `WFL_EXECUTABLE` set to its executable)
+and an available loopback port 8080. They check an explicitly configured port,
+the default when the setting or file is absent, and startup URLs. They do not
+exercise installer submission or other complete CMS journeys. The WFL tests
+workflow runs them inside its disposable nightly container after the WFL suites.
+
 | Existing suite | Direct command from the repository root | What it currently exercises |
 |---|---|---|
-| Utilities | `wfl --test TestPrograms/util.test.wfl` | Slugs, number/field helpers, parsing, config values, installer validation |
+| Utilities | `wfl --test TestPrograms/util.test.wfl` | Slugs, number/field helpers, parsing, config values and valid/default ports, installer validation |
 | Data | `wfl --test TestPrograms/db.test.wfl` | In-memory SQLite CRUD helpers, sessions, installer state, rate-limit records, legacy CSRF-column migration |
 | Auth | `wfl --test TestPrograms/auth.test.wfl` | CSRF helper acceptance/rejection and session token binding |
 | Scribe integration | `wfl --test TestPrograms/scribe.test.wfl` | Markdown, safe-marker/filter propagation, escaping, nested blockquotes |
@@ -180,8 +193,9 @@ keyboard behavior, or data integrity.
   concrete restore or forward-repair plan. An in-memory migration test alone
   does not prove crash recovery or database/upload consistency.
 - **Configuration:** exercise unset/default keys and explicit values for
-  `data_dir`, `theme`, and `theme_root`, including malformed values. Account for
-  the current whole-line-comment parsing and out-of-tree theme paths.
+  `web_server_port`, `data_dir`, `theme`, and `theme_root`, including malformed
+  values. Account for the current whole-line-comment parsing and out-of-tree
+  theme paths.
 - **Dependencies:** inspect the actual pinned Scribe diff, run both local and
   upstream suites, and exercise affected rendering paths. Runtime upgrades also
   require the application suites and affected web/SQLite/crypto boundaries.
@@ -210,7 +224,8 @@ moving: retain the run URL and digest with PR evidence so a later nightly does
 not obscure which runtime was tested. The nightly workflow is not a declaration
 that every nightly, platform, or production configuration is supported.
 
-There is no automated HTTP/browser journey suite in this repository. The
+Automated HTTP coverage is limited to startup port configuration and serving
+the installer form. Complete HTTP/browser journeys remain unautomated. The
 scheduled Scribe updater only proposes dependency changes; its successful run
 alone is not runtime test evidence.
 
@@ -248,7 +263,7 @@ remain a separate adoption item below.
 
 | Gap | Required next step and trigger |
 |---|---|
-| No router/HTTP or browser automation | Add real-boundary regression coverage with each affected behavior change; plan coverage of all critical journeys before the next production release. |
+| HTTP coverage is limited to port configuration; no browser automation | Add real-boundary regression coverage with each affected behavior change; plan coverage of all critical journeys before the next production release. |
 | No declared compatibility matrix or release-candidate workflow | Define supported runtime/platform/configuration tuples and retain candidate results before the next production release. |
 | No coverage measurement, performance budgets, or scheduled extended tests | Establish baselines and risk-based targets before claiming those properties; review at the next profile review. |
 | Host protection settings are external | Maintainer verifies required checks and review rules on GitHub at adoption and after workflow changes. |
