@@ -37,24 +37,36 @@ jobs:
           python-version: '3.12'
       - name: Provision the current WFL nightly
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $releases = gh api 'repos/WebFirstLanguage/wfl/releases?per_page=100' | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot read WFL releases' }
-          $release = $releases | Where-Object { $_.tag_name -like 'nightly-*' -and -not $_.draft } | Select-Object -First 1
-          if (-not $release) { throw 'No published WFL nightly release found' }
-          $pattern = if ($IsWindows) { '^wfl-.*\.msi$' } else { '^wfl-.*-linux-x86_64-.*\.tar\.gz$' }
-          $assets = @($release.assets | Where-Object { $_.name -match $pattern })
-          if ($assets.Count -ne 1) { throw 'Expected one platform-specific WFL release asset' }
-          $asset = $assets[0]
+          # The GitHub daily release is an immutable mirror. The canonical
+          # publisher can release a newer runtime on the same day to this CDN.
+          $cdn = 'https://wfl.nyc3.cdn.digitaloceanspaces.com'
+          $publication = Invoke-RestMethod -Uri "$cdn/status.json"
+          if ($publication.result -ne 'success' -or $publication.branch -ne 'main' -or
+              $publication.version -notmatch '^\d+\.\d+\.\d+$' -or
+              $publication.sha -notmatch '^[a-f0-9]{40}$') {
+            throw 'Invalid official WFL publication record'
+          }
+          $releaseVersion = [regex]::Escape($publication.version)
+          $pattern = if ($IsWindows) { "^wfl-$releaseVersion\.msi$" } else { "^wfl-$releaseVersion-linux-x86_64-[a-f0-9]{7,40}\.tar\.gz$" }
+          $assets = @($publication.message -split '\s+' | Where-Object { $_ -match $pattern })
+          if ($assets.Count -ne 1) { throw 'Publication must name one immutable platform-specific WFL asset' }
+          $assetName = $assets[0]
+          if (-not $IsWindows -and $assetName -match '-linux-x86_64-([a-f0-9]{7,40})\.tar\.gz$') {
+            if (-not $publication.sha.StartsWith($Matches[1])) { throw 'WFL artifact revision does not match publication' }
+          }
+          $assetUrl = "$cdn/releases/$assetName"
+          $checksum = (Invoke-WebRequest -Uri "$assetUrl.sha256").Content.Trim()
+          $checksumPattern = '^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape($assetName) + '$'
+          if ($checksum -notmatch $checksumPattern) { throw 'Invalid immutable WFL checksum sidecar' }
+          $expectedDigest = $Matches[1].ToLowerInvariant()
           $runtimeRoot = Join-Path $env:RUNNER_TEMP 'scriptorium-wfl'
           New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
-          $archive = Join-Path $runtimeRoot $asset.name
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+          $archive = Join-Path $runtimeRoot $assetName
+          Invoke-WebRequest -Uri $assetUrl -OutFile $archive
           $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($asset.digest -and $asset.digest -ne "sha256:$digest") { throw 'WFL release asset digest mismatch' }
+          if ($expectedDigest -ne $digest) { throw 'WFL release asset digest mismatch' }
           if ($IsWindows) {
             $expanded = Join-Path $runtimeRoot 'expanded'
             $arguments = @('/a', "`"$archive`"", '/qn', "TARGETDIR=`"$expanded`"")
@@ -71,10 +83,12 @@ jobs:
           $programs[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
           $version = & $runtimePath --version
           if ($LASTEXITCODE -ne 0) { throw 'Extracted WFL runtime did not start' }
+          if ($version -ne "WebFirst Language (WFL) version $($publication.version)") { throw 'WFL executable version does not match publication' }
           @(
             '### Governance runtime',
-            "- Release: $($release.html_url)",
-            "- Asset: $($asset.browser_download_url)",
+            "- Publication: $cdn/status.json",
+            "- WFL revision: $($publication.sha)",
+            "- Asset: $assetUrl",
             "- SHA256: $digest",
             "- Runtime: $version",
             "- Scriptorium: $env:GITHUB_SHA"

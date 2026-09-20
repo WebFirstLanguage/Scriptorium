@@ -36,11 +36,14 @@ jobs:
           image="$(docker image inspect --format '{{index .RepoDigests 0}}' "$WFL_IMAGE")"
           echo "image=$image" >> "$GITHUB_OUTPUT"
           version="$(docker run --rm --network none "$image" --version)"
+          runtime_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+          [[ "$runtime_revision" =~ ^[a-f0-9]{40}$ ]] || { echo 'Official image is missing its WFL source revision'; exit 1; }
           {
             echo '### WFL nightly test environment'
             echo
             echo "- Image: $image"
             echo "- Runtime: $version"
+            echo "- WFL revision: $runtime_revision"
             echo "- Scriptorium: $(git rev-parse HEAD)"
             echo "- Scribe: $(git -C lib/scribe rev-parse HEAD)"
             echo '- Runner: blacksmith-2vcpu-ubuntu-2404 (Linux x64)'
