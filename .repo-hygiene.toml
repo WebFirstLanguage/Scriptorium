@@ -10,7 +10,7 @@ allowed-files = [
   "REPOSITORY_HYGIENE.md", "SECURITY.md", "main.wfl", "testing.md",
 ]
 allowed-dirs = [
-  ".github", "admin", "app", "docs", "lib", "scripts", "static",
+  ".github", "admin", "app", "docs", "examples", "lib", "scripts", "static",
   "TestPrograms", "tests", "themes",
 ]
 
@@ -21,8 +21,9 @@ files = [
   "CONTRIBUTING.md", "GOVERNANCE.md", "LICENSE", "README.md",
   "REPOSITORY_HYGIENE.md", "SECURITY.md", "main.wfl", "testing.md",
   "docs/ARCHITECTURE.md", "docs/PROJECT-LAYOUT.md", "docs/THEMING.md",
-  "scripts/check_repo_hygiene.py", "scripts/run_tests.py",
-  "tests/tooling/test_repo_hygiene.py", "tests/tooling/test_run_tests.py",
+  "scripts/check_repo_hygiene.py", "scripts/run_tests.wfl",
+  "scripts/test_support.wfl", "scripts/resolve_runtime.wfl", "scripts/.wflcfg",
+  "tests/tooling/hygiene.test.wfl", "tests/tooling/runner.test.wfl", "tests/tooling/.wflcfg",
   ".github/pull_request_template.md", ".github/workflows/governance.yml",
 ]
 # These paths must remain Git gitlinks; their contents are upstream-owned.

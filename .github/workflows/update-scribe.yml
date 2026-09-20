@@ -136,8 +136,8 @@ jobs:
             echo
             echo '| Check or exact command | Result and evidence |'
             echo '|---|---|'
-            echo '| `python3 scripts/run_tests.py --include-scribe` | Pending — this workflow prepares the dependency bump. Link WFL tests results for the current revision, including the nightly image digest and runtime version; record failures. |'
-            echo '| `python -m unittest discover -s tests/tooling -v` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
+            echo '| `wfl --execution-timeout 1200 scripts/run_tests.wfl` | Pending — this workflow prepares the dependency bump. Link WFL tests results for the current revision, including the nightly image digest and runtime version; record failures. |'
+            echo '| `wfl scripts/run_tests.wfl --group tooling` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
             echo '| `python scripts/check_repo_hygiene.py` | Pending — Governance results are not verified by this workflow. Link results for the current revision. |'
             echo '| Affected HTTP/UI rendering journeys | Not run — upstream diff review is needed to identify affected paths. Record setup, expected/actual outcome, and evidence. |'
             echo

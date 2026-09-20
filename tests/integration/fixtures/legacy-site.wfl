@@ -1,0 +1,33 @@
+// Synthetic legacy schema, frozen from the original application at 4ec5c88.
+// Deliberately omit sessions.csrf_token and all migration-history objects.
+include from "http-helpers.wfl"
+
+define action called http_seed_legacy_site with parameters site_spec:
+    call makedirs with (path_dirname of site_spec["database"])
+    open database at ("sqlite://" with site_spec["database"]) as legacy_db
+    try:
+        in transaction on legacy_db:
+            for each schema_sql in ["CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at TEXT DEFAULT (datetime('now')))", "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)", "CREATE TABLE posts (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))", "CREATE TABLE pages (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body_markdown TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', author_id INTEGER, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))", "CREATE TABLE settings (skey TEXT PRIMARY KEY, svalue TEXT NOT NULL DEFAULT '')", "CREATE TABLE media (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT UNIQUE NOT NULL, original_name TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0, uploader_id INTEGER, created_at TEXT DEFAULT (datetime('now')))", "CREATE TABLE login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, attempted_at TEXT DEFAULT (datetime('now')))", "CREATE INDEX idx_login_attempts_ip_time ON login_attempts (ip, attempted_at)"]:
+                store created as execute legacy_db with schema_sql
+            end for
+            store password_hash as hash_password of "Synthetic-legacy-2026!"
+            store seeded_user as execute legacy_db with "INSERT INTO users (id, username, password_hash, role) VALUES (7, 'legacy-admin', ?, 'admin')" and parameters [password_hash]
+            store seeded_settings as execute legacy_db with "INSERT INTO settings (skey, svalue) VALUES ('installed', 'yes'), ('site_title', 'Legacy Extension Journal'), ('site_tagline', 'Retained legacy tagline'), ('posts_per_page', '3')"
+            store seeded_post as execute legacy_db with "INSERT INTO posts (id, slug, title, body_markdown, status, author_id) VALUES (12, 'heritage', 'Retained title', 'Retained **legacy body**', 'published', 7)"
+            store seeded_session as execute legacy_db with "INSERT INTO sessions (id, user_id, expires_at) VALUES ('synthetic-legacy-session', 7, '2099-01-01 00:00:00')"
+            store extension_table as execute legacy_db with "CREATE TABLE fixture_notes (id INTEGER PRIMARY KEY, note TEXT NOT NULL)"
+            store extension_row as execute legacy_db with "INSERT INTO fixture_notes (id, note) VALUES (5, 'Retained extension payload')"
+        end transaction
+    finally:
+        close database legacy_db
+    end try
+end action
+
+define action called http_install_legacy_extension with parameters site_spec:
+    call copy_file with (path_join of http_fixture_root and "legacy-extension.wfl") and (path_join of site_spec["site"] and "app/site_ext.wfl")
+    store custom_theme_root as path_join of site_spec["site"] and "custom-themes/heritage/body"
+    call http_write with (path_join of custom_theme_root and "extension.html") and "<!doctype html><title>{{ site.title }}</title><main>Custom extension theme | {{ site.title }} | {{ retained_note }} | Boots: {{ boot_count }}</main>"
+    call http_write with (path_join of custom_theme_root and "post.html") and "<!doctype html><title>{{ post.title }}</title><main>Custom post theme | {{ site.title }} | {{ post.title }} | {{ post.author_name }} | {{ post.body_markdown | markdown }}</main>"
+    store site_config as http_base_config with "data_dir = runtime-data\nweb_server_port = " with site_spec["port"] with "\ntheme_root = custom-themes\ntheme = heritage\n"
+    call http_write with (path_join of site_spec["site"] and ".wflcfg") and site_config
+end action

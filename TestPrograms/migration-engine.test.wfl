@@ -1,0 +1,99 @@
+include from "../tests/fixtures/migration-registry.wfl"
+
+describe "File-backed migration history and rollback":
+    test "plan is read only and targeted apply rollback count and reapply retain audit history":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store planned as orm_migration_plan of session and registry and "20260920000002"
+            expect length of planned.pending to equal 2
+            expect orm_schema_exists of session and "_orm_migrations" to be no
+            store applied_plan as orm_migrate of session and registry and "20260920000002"
+            expect length of applied_plan.applied to equal 2
+            store repeated_plan as orm_migrate of session and registry and "20260920000002"
+            expect length of repeated_plan.applied to equal 2
+            store rolled_plan as orm_rollback_count of session and registry and 1
+            expect length of rolled_plan.applied to equal 1
+            store reapplied_plan as orm_migrate of session and registry and "20260920000002"
+            expect length of reapplied_plan.applied to equal 2
+            store event_rows as orm_sql_query of session and "SELECT event_kind FROM _orm_migration_events ORDER BY event_id" and []
+            expect length of event_rows to equal 4
+            store rollback_event as event_rows[2]
+            expect rollback_event["event_kind"] to equal "rollback"
+            // Preflight must refuse the whole two-version rollback before the
+            // otherwise-reversible index migration has been rolled back.
+            store refused as no
+            try:
+                store impossible as orm_rollback_to of session and registry and "zero"
+            when error:
+                change refused to yes
+                expect error_message contains "irreversible" to be yes
+            end try
+            expect refused to be yes
+            store after_refusal as orm_migration_status of session and registry
+            expect length of after_refusal.applied to equal 2
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "checksum edits missing files and missing ledger rows fail before changing managed data":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store applied_plan as orm_migrate of session and registry and "20260920000002"
+            store seeded as orm_sql_execute of session and "INSERT INTO items(title) VALUES (?)" and ["retained"]
+            store rejected as 0
+            try:
+                store changed_registry as migration_fixture_registry of "fixture index source changed\n"
+                store changed_plan as orm_migration_status of session and changed_registry
+            when error:
+                change rejected to rejected plus 1
+                expect error_message contains "checksum" to be yes
+            end try
+            try:
+                store short_plan as orm_migration_status of session and [registry[0]]
+            when error:
+                change rejected to rejected plus 1
+                expect error_message contains "missing" to be yes
+            end try
+            store removed_history as orm_sql_execute of session and "DELETE FROM _orm_migrations WHERE position=2" and []
+            try:
+                store corrupt_plan as orm_migration_status of session and registry
+            when error:
+                change rejected to rejected plus 1
+                expect error_message contains "disagree" to be yes
+            end try
+            expect rejected to equal 3
+            store kept_rows as orm_sql_query of session and "SELECT title FROM items" and []
+            store kept_row as kept_rows[0]
+            expect kept_row["title"] to equal "retained"
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+
+    test "checksum canonicalizes only CRLF and rejects drift even when history is unchanged":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry_lf as migration_fixture_registry of "first line\nsecond line\n"
+            store registry_crlf as migration_fixture_registry of "first line\r\nsecond line\r\n"
+            expect orm_migration_checksum of registry_lf[1] to equal (orm_migration_checksum of registry_crlf[1])
+            store applied_plan as orm_migrate of session and registry_lf and "20260920000002"
+            store drifted as orm_sql_execute of session and "DROP INDEX idx_items_title" and []
+            store refused as no
+            try:
+                store checked_plan as orm_migration_status of session and registry_lf
+            when error:
+                change refused to yes
+                expect error_message contains "missing managed index" to be yes
+            end try
+            expect refused to be yes
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+end describe

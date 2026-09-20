@@ -1,0 +1,2 @@
+display "synthetic blocking child started"
+wait for 15000 milliseconds

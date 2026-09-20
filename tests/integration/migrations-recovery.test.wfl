@@ -1,0 +1,143 @@
+include from "../fixtures/migration-registry.wfl"
+include from "../../scripts/test_support.wfl"
+
+store migration_runtime as call current_executable
+store migration_worker as path_join of current_directory and "tests/fixtures/migration-worker.wfl"
+
+define action called migration_wait_ready with parameters child_process and signal_path:
+    store ready_seen as no
+    count from 1 to 200:
+        check if file exists at signal_path:
+            change ready_seen to yes
+            break
+        end check
+        check if (process child_process is running) is equal to no:
+            wait for process child_process to complete with timeout 1 and read result as stopped_child
+            display stopped_child["output"] with stopped_child["error"]
+            call raise_error with "Migration fixture exited before readiness"
+        end check
+        wait for 25 milliseconds
+    end count
+    expect ready_seen to be yes
+    return yes
+end action
+
+define action called migration_remove_signals with parameters database_path:
+    for each suffix_text in [".ready", ".second-ready", ".release"]:
+        store owned_path as database_path with suffix_text
+        check if file exists at owned_path:
+            delete file at owned_path
+        end check
+    end for
+end action
+
+describe "Real process migration ownership and recovery":
+    test "a bounded locked migration fails cleanly and killing its owner rolls back schema data and events":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store initialized as orm_migrate of session and registry and "20260920000002"
+            store ready_path as database_path with ".ready"
+            store release_path as database_path with ".release"
+            wait for spawn command migration_runtime with arguments [migration_worker, database_path, "hold", ready_path, release_path] as holder_process
+            try:
+                call migration_wait_ready with holder_process and ready_path
+                store began_at as current time in milliseconds
+                store refused as no
+                try:
+                    store blocked_plan as orm_migrate of session and registry and "latest"
+                when error:
+                    change refused to yes
+                    expect error_message contains "5 seconds" to be yes
+                end try
+                store elapsed_ms as (current time in milliseconds) minus began_at
+                expect refused to be yes
+                expect elapsed_ms is greater than or equal to 4000 to be yes
+                expect elapsed_ms is less than 8000 to be yes
+            finally:
+                close process holder_process
+            end try
+            expect (process holder_process is running) to be no
+            store recovered_status as orm_migration_status of session and registry
+            expect length of recovered_status.applied to equal 2
+            expect orm_schema_exists of session and "abandoned_schema" to be no
+            expect length of (orm_sql_query of session and "SELECT * FROM items WHERE title='uncommitted'" and []) to equal 0
+            expect length of (orm_sql_query of session and "SELECT * FROM _orm_migration_events WHERE migration_id='uncommitted'" and []) to equal 0
+            store completed as orm_migrate of session and registry and "latest"
+            expect length of completed.applied to equal 3
+            expect length of (orm_sql_query of session and "PRAGMA foreign_key_check" and []) to equal 0
+        finally:
+            call migration_fixture_remove with session and database_path
+            call migration_remove_signals with database_path
+        end try
+    end test
+
+    test "two real same-target runners converge without duplicate ledger or events":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store first_signal as database_path with ".ready"
+            store second_signal as database_path with ".second-ready"
+            wait for spawn command migration_runtime with arguments [migration_worker, database_path, "apply", first_signal, "latest"] as first_process
+            try:
+                wait for spawn command migration_runtime with arguments [migration_worker, database_path, "apply", second_signal, "latest"] as second_process
+                try:
+                    wait for process first_process to complete with timeout 20 and read result as first_result
+                    wait for process second_process to complete with timeout 20 and read result as second_result
+                    expect first_result["exit_code"] to equal 0
+                    expect second_result["exit_code"] to equal 0
+                finally:
+                    close process second_process
+                end try
+            finally:
+                close process first_process
+            end try
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store checked_plan as orm_migration_status of session and registry
+            expect length of checked_plan.applied to equal 3
+            expect length of (orm_sql_query of session and "SELECT * FROM _orm_migration_events" and []) to equal 3
+        finally:
+            call migration_fixture_remove with session and database_path
+            call migration_remove_signals with database_path
+        end try
+    end test
+
+    test "a competing owner advancing beyond the requested target produces a conflict instead of false success":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store initialized as orm_migrate of session and registry and "20260920000001"
+            store first_signal as database_path with ".ready"
+            store second_signal as database_path with ".second-ready"
+            store release_path as database_path with ".release"
+            wait for spawn command migration_runtime with arguments [migration_worker, database_path, "advance", first_signal, release_path] as owner_process
+            try:
+                call migration_wait_ready with owner_process and first_signal
+                wait for spawn command migration_runtime with arguments [migration_worker, database_path, "apply", second_signal, "20260920000002"] as waiting_process
+                try:
+                    call migration_wait_ready with waiting_process and second_signal
+                    call test_write_text with release_path and "commit"
+                    wait for process owner_process to complete with timeout 10 and read result as owner_result
+                    wait for process waiting_process to complete with timeout 10 and read result as waiting_result
+                    expect owner_result["exit_code"] to equal 0
+                    expect waiting_result["exit_code"] is not equal to 0 to be yes
+                    // Scheduling may expose the competing commit in the first
+                    // consistent plan or in the later locked recheck. Both
+                    // must refuse the stale target without claiming success.
+                    expect ((waiting_result["error"] contains "migration concurrency") or (waiting_result["error"] contains "migration target")) to be yes
+                finally:
+                    close process waiting_process
+                end try
+            finally:
+                close process owner_process
+            end try
+            store checked_plan as orm_migration_status of session and registry
+            expect length of checked_plan.applied to equal 3
+        finally:
+            call migration_fixture_remove with session and database_path
+            call migration_remove_signals with database_path
+        end try
+    end test
+end describe

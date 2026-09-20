@@ -1,0 +1,37 @@
+// Baseline Red is preserved in a81ecf9: false returns committed a partial write.
+// The deliberate error primitive now unwinds through the same native scope.
+store checkout_root as path_dirname of (path_dirname of script_directory)
+store probe_dir as path_join of checkout_root and "target" and "runtime-capability-results"
+create directory at probe_dir
+store probe_file as path_join of probe_dir and "transaction-validation.db"
+store probe_url as "sqlite://" with probe_file
+
+define action called save_then_reject with parameters conn:
+    in transaction on conn:
+        store inserted as execute conn with "INSERT INTO validation_probe (label) VALUES (?)" and parameters ["must roll back"]
+        call raise_error with "controlled validation rejection"
+    end transaction
+end action
+
+describe "Required validation failure rollback capability":
+    test "a failed operation must not leave an earlier write committed":
+        open database at probe_url as conn
+        try:
+            store dropped as execute conn with "DROP TABLE IF EXISTS validation_probe"
+            store created as execute conn with "CREATE TABLE validation_probe (label TEXT NOT NULL)"
+            store rejected as no
+            try:
+                call save_then_reject with conn
+            when error:
+                change rejected to yes
+                expect error_message contains "controlled validation rejection" to be yes
+            end try
+            expect rejected to be yes
+            store rows as query conn with "SELECT label FROM validation_probe"
+            expect length of rows to equal 0
+        finally:
+            close database conn
+            delete file at probe_file
+        end try
+    end test
+end describe

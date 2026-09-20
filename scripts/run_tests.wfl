@@ -1,0 +1,173 @@
+// Complete suite by default; --group selects an explicitly focused run.
+include from "test_support.wfl"
+
+store repo_root as path_dirname of script_directory
+store runtime_path as call current_executable
+store suite_timeout as 120
+store selected_group as "all"
+store include_scribe as no
+store argument_index as 0
+
+define action called runner_error with parameters detail:
+    display "Test setup or cleanup failed: " with detail
+    exit program with code 2
+end action
+
+repeat while argument_index is less than (length of args):
+    store option_name as args[argument_index]
+    change argument_index to argument_index plus 1
+    check if option_name is equal to "--help":
+        display "Usage: wfl [--execution-timeout SECONDS] scripts/run_tests.wfl [--wfl PROGRAM] [--timeout SECONDS] [--group all|application|tooling|integration|runtime|examples|scribe] [--include-scribe]"
+        display "Default: all suites, executable examples, and pinned Scribe; 120 seconds per suite."
+        display "For the complete suite, use --execution-timeout 1200 before the script path."
+        exit program
+    otherwise:
+        check if option_name is equal to "--include-scribe":
+            change include_scribe to yes
+        otherwise:
+            check if argument_index is greater than or equal to (length of args):
+                call runner_error with ("missing value for " with option_name)
+            end check
+            store option_value as args[argument_index]
+            change argument_index to argument_index plus 1
+            check if option_name is equal to "--wfl":
+                change runtime_path to option_value
+            otherwise:
+                check if option_name is equal to "--group":
+                    change selected_group to option_value
+                otherwise:
+                    check if option_name is equal to "--timeout":
+                        store parsed_timeout as nothing
+                        try:
+                            change parsed_timeout to parse_json of option_value
+                        when error:
+                            call runner_error with "timeout must be a finite positive number"
+                        end try
+                        check if (type_of of parsed_timeout) is not equal to "Number":
+                            call runner_error with "timeout must be a finite positive number"
+                        end check
+                        check if parsed_timeout is less than or equal to 0 or parsed_timeout is greater than 31536000:
+                            call runner_error with "timeout must be positive and at most one year"
+                        end check
+                        change suite_timeout to parsed_timeout
+                    otherwise:
+                        call runner_error with ("unknown option: " with option_name)
+                    end check
+                end check
+            end check
+        end check
+    end check
+end repeat
+
+store group_paths as parse_json of "{\"application\":\"TestPrograms\",\"tooling\":\"tests/tooling\",\"integration\":\"tests/integration\",\"runtime\":\"tests/runtime\",\"examples\":\"examples\"}"
+store group_names as ["application", "tooling", "integration", "runtime", "examples"]
+check if selected_group is not equal to "all" and selected_group is not equal to "scribe" and (includes of group_names and selected_group) is equal to no:
+    call runner_error with ("unknown test group: " with selected_group)
+end check
+check if selected_group is equal to "all" or selected_group is equal to "scribe":
+    change include_scribe to yes
+end check
+
+store suites as []
+for each group_name in group_names:
+    check if selected_group is equal to "all" or selected_group is equal to group_name:
+        store group_path as path_join of repo_root and group_paths[group_name]
+        store discovered as []
+        check if is_dir of group_path:
+            change discovered to rglob of "*.test.wfl" and group_path
+        end check
+        call sort with discovered
+        store group_count as 0
+        for each suite_path in discovered:
+            check if is_file of suite_path:
+                push with suites and suite_path
+                change group_count to group_count plus 1
+            end check
+        end for
+        check if group_count is equal to 0:
+            call runner_error with ("no WFL test suites found under " with group_paths[group_name] with "/")
+        end check
+    end check
+end for
+
+store scribe_root as path_join of repo_root and "lib/scribe"
+check if include_scribe:
+    for each required_path in ["src/scribe.wfl", "tests/scribe.test.wfl"]:
+        check if (is_file of (path_join of scribe_root and required_path)) is equal to no:
+            call runner_error with ("missing Scribe file: " with required_path with "; initialize the pinned submodule")
+        end check
+    end for
+end check
+
+// Validate overrides before starting any suite and pass the resolved identity
+// to every suite as args[0], including when invoked outside the repository.
+try:
+    store resolver_path as path_join of script_directory and "resolve_runtime.wfl"
+    store runtime_outcome as test_execute of runtime_path and [resolver_path] and repo_root and 10
+    check if runtime_outcome["success"] is equal to no:
+        call runner_error with ("WFL executable failed: " with runtime_outcome["error"])
+    end check
+    change runtime_path to trim of runtime_outcome["output"]
+    check if (is_file of runtime_path) is equal to no:
+        call runner_error with "WFL executable discovery did not return an existing program"
+    end check
+when error:
+    call runner_error with ("WFL executable not found or unavailable: " with error_message)
+end try
+
+define action called run_suite with parameters suite_path and working_path and suite_label:
+    display newline with "=== " with suite_label with " ==="
+    try:
+        store outcome as test_execute of runtime_path and ["--test", suite_path, runtime_path] and working_path and suite_timeout
+        display outcome["output"]
+        check if (length of outcome["error"]) is greater than 0:
+            display "Child stderr for " with suite_label with ":" with newline with outcome["error"]
+        end check
+        check if outcome["success"] is equal to no:
+            display "FAIL " with suite_label with ": exit " with outcome["exit_code"]
+            return no
+        end check
+    when error:
+        display "FAIL " with suite_label with ": " with error_message
+        return no
+    end try
+    display "PASS " with suite_label
+    return yes
+end action
+
+store passed_suites as 0
+store total_suites as 0
+store disposable_root as path_join of repo_root and "target/test-artifacts/scribe" and (generate_uuid)
+try:
+    for each suite_path in suites:
+        change total_suites to total_suites plus 1
+        check if run_suite of suite_path and repo_root and suite_path:
+            change passed_suites to passed_suites plus 1
+        end check
+    end for
+    check if include_scribe:
+        store copy_root as path_join of disposable_root and "scribe"
+        call test_copy_tree with scribe_root and copy_root
+        call makedirs with (path_join of copy_root and "build")
+        change total_suites to total_suites plus 1
+        store scribe_suite as path_join of copy_root and "tests/scribe.test.wfl"
+        check if run_suite of scribe_suite and copy_root and "lib/scribe/tests/scribe.test.wfl (temporary copy)":
+            change passed_suites to passed_suites plus 1
+        end check
+    end check
+when error:
+    call runner_error with error_message
+finally:
+    try:
+        check if is_dir of disposable_root:
+            call remove_dir with disposable_root and yes
+        end check
+    when error:
+        call runner_error with error_message
+    end try
+end try
+store failed_suites as total_suites minus passed_suites
+display newline with total_suites with " suites: " with passed_suites with " passed, " with failed_suites with " failed"
+check if failed_suites is greater than 0:
+    exit program with code 1
+end check

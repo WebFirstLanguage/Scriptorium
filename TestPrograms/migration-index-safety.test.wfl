@@ -1,0 +1,39 @@
+include from "../tests/fixtures/migration-registry.wfl"
+
+describe "Historical managed index drift":
+    test "an index belonging to a later version cannot be silently accepted after rollback":
+        store database_path as migration_fixture_path
+        store session as orm_open of database_path
+        try:
+            store registry as migration_fixture_registry of "fixture index source\n"
+            store initialized as orm_migrate of session and registry and "20260920000002"
+            store rolled_back as orm_rollback_to of session and registry and "20260920000001"
+            store reintroduced as orm_sql_execute of session and "CREATE INDEX idx_items_title ON items(title)" and []
+            store refused as no
+            try:
+                store drifted_status as orm_migration_status of session and registry
+            when error:
+                change refused to yes
+                expect error_message contains "schema drift" to be yes
+            end try
+            expect refused to be yes
+            // SQLite object names are ASCII-case insensitive. A different
+            // spelling must not evade the historical managed-name check.
+            store conn as session.connection
+            in transaction on conn for schema changes:
+                store dropped_index as orm_sql_execute of session and "DROP INDEX idx_items_title" and []
+                store upper_index as orm_sql_execute of session and "CREATE INDEX IDX_ITEMS_TITLE ON items(title)" and []
+            end transaction
+            store upper_refused as no
+            try:
+                store upper_status as orm_migration_status of session and registry
+            when error:
+                change upper_refused to yes
+                expect error_message contains "schema drift" to be yes
+            end try
+            expect upper_refused to be yes
+        finally:
+            call migration_fixture_remove with session and database_path
+        end try
+    end test
+end describe

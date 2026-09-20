@@ -1,0 +1,54 @@
+// Original behavioral Red lives in a81ecf9. Use the reviewed native facilities
+// while preserving working-directory, complete diagnostics and cleanup claims.
+store runtime_path as call current_executable
+
+describe "WFL process contracts required by the complete suite":
+    test "direct children use an isolated fixture working directory":
+        store fixture_directory as path_join of script_directory and "fixtures"
+        store fixture_path as path_join of fixture_directory and "process-child.wfl"
+        wait for execute command runtime_path with arguments [fixture_path] in directory fixture_directory as child_result
+        expect child_result["exit_code"] to equal 0
+        expect child_result["output"] to contain fixture_directory
+    end test
+
+    test "completion returns final captured output with its exit status":
+        store fixture_path as path_join of script_directory and "fixtures/process-child.wfl"
+        wait for spawn command runtime_path with arguments [fixture_path] as child_process
+        try:
+            wait for process child_process to complete with timeout 10 and read result as outcome
+            expect outcome["exit_code"] to equal 0
+            expect outcome["output"] to contain "synthetic child output"
+        finally:
+            close process child_process
+        end try
+    end test
+
+    test "background process diagnostics preserve stderr":
+        store fixture_path as path_join of script_directory and "fixtures/process-error.wfl"
+        wait for spawn command runtime_path with arguments [fixture_path] as child_process
+        try:
+            wait for process child_process to complete with timeout 10 and read result as outcome
+            expect outcome["exit_code"] to equal 1
+            expect outcome["error"] to contain "Division by zero"
+        finally:
+            close process child_process
+        end try
+    end test
+
+    test "finally terminates a directly owned child after a controlled error":
+        store fixture_path as path_join of script_directory and "fixtures/process-blocking.wfl"
+        wait for spawn command runtime_path with arguments [fixture_path] as child_process
+        store observed_error as no
+        try:
+            wait for 300 milliseconds
+            expect (process child_process is running) to equal yes
+            call raise_error with "controlled process owner failure"
+        when error:
+            change observed_error to yes
+        finally:
+            close process child_process
+        end try
+        expect observed_error to equal yes
+        expect (process child_process is running) to equal no
+    end test
+end describe

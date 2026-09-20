@@ -1,0 +1,3 @@
+display "intentional runtime stdout"
+store denominator as 0
+display 1 divided by denominator

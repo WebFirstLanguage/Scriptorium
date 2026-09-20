@@ -1,0 +1,218 @@
+include from "../tests/fixtures/orm-model.wfl"
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "orm-crud"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "crud.db"
+store session as orm_open of database_path
+store entries as fixture_entries_model
+try:
+    describe "File-backed ORM operations":
+        test "insert and read return typed records with defaults and exact identities":
+            call fixture_reset_entries with session
+            store saved as fixture_entry of session and entries and "first"
+            expect orm_get of saved and "id" to equal "1"
+            expect orm_get of saved and "enabled" to equal no
+            expect orm_get of saved and "score" to equal 7
+            expect orm_get of saved and "note" to equal nothing
+            store found_record as orm_find_key of session and entries and "1"
+            expect orm_get of found_record and "slug" to equal "first"
+            expect orm_find_key of session and entries and "999" to equal nothing
+            expect saved.persisted to be yes
+        end test
+
+        test "save changes assigned values while preserving the primary key":
+            call fixture_reset_entries with session
+            store saved as fixture_entry of session and entries and "before"
+            call orm_set with saved and "slug" and "after"
+            call orm_set with saved and "enabled" and yes
+            store updated as orm_save of session and saved
+            expect orm_get of updated and "slug" to equal "after"
+            expect orm_get of updated and "enabled" to equal yes
+            expect orm_get of updated and "id" to equal "1"
+            call orm_set with updated and "id" and "2"
+            store rejected as no
+            try:
+                store invalid_save as orm_save of session and updated
+            when error:
+                change rejected to yes
+                expect error_message contains "changing a persisted primary key" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_count of session and (orm_query of entries) to equal 1
+        end test
+
+        test "bounded pages have stable ordering and counts describe the filter":
+            call fixture_reset_entries with session
+            store a as fixture_entry of session and entries and "bravo"
+            store b as fixture_entry of session and entries and "alpha"
+            store c as fixture_entry of session and entries and "charlie"
+            store requested as orm_query of entries
+            call orm_order_by with requested and "slug" and "ascending"
+            call orm_page with requested and 1 and 1
+            store page_rows as orm_find of session and requested
+            expect length of page_rows to equal 1
+            expect orm_get of page_rows[0] and "slug" to equal "bravo"
+            expect orm_count of session and requested to equal 3
+            expect orm_exists of session and requested to be yes
+            store rejected as 0
+            try:
+                call orm_page with requested and 0 and 0
+            when error:
+                change rejected to rejected plus 1
+            end try
+            try:
+                call orm_order_by with requested and "slug" and "ASC; DROP TABLE entries"
+            when error:
+                change rejected to rejected plus 1
+            end try
+            try:
+                call orm_page with requested and 10 and -1
+            when error:
+                change rejected to rejected plus 1
+            end try
+            expect rejected to equal 3
+        end test
+
+        test "a projected omission stays missing and cannot save without its key":
+            call fixture_reset_entries with session
+            store saved as fixture_entry of session and entries and "projected"
+            store requested as orm_query of entries
+            call orm_select with requested and ["slug"]
+            store projected as orm_first of session and requested
+            expect orm_has of projected and "slug" to be yes
+            expect orm_has of projected and "note" to be no
+            store rejected as no
+            try:
+                store invalid_save as orm_save of session and projected
+            when error:
+                change rejected to yes
+                expect error_message contains "projected primary key" to be yes
+            end try
+            expect rejected to be yes
+        end test
+
+        test "database uniqueness remains authoritative and upsert is explicit":
+            call fixture_reset_entries with session
+            store saved as fixture_entry of session and entries and "unique"
+            store duplicate_draft as orm_record of entries
+            call orm_set with duplicate_draft and "slug" and "unique"
+            call orm_set with duplicate_draft and "note" and "revised"
+            store rejected as no
+            try:
+                store duplicate as orm_save of session and duplicate_draft
+            when error:
+                change rejected to yes
+                expect error_message contains "UNIQUE constraint failed" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_insert_if_absent of session and duplicate_draft and "slug" to equal nothing
+            store upserted as orm_upsert of session and duplicate_draft and "slug"
+            expect orm_get of upserted and "id" to equal "1"
+            expect orm_get of upserted and "note" to equal "revised"
+            expect orm_count of session and (orm_query of entries) to equal 1
+        end test
+
+        test "bulk writes require intent and honor page selection":
+            call fixture_reset_entries with session
+            store a as fixture_entry of session and entries and "a"
+            store b as fixture_entry of session and entries and "b"
+            store c as fixture_entry of session and entries and "c"
+            store requested as orm_query of entries
+            store rejected as no
+            try:
+                store unintended as orm_delete of session and requested
+            when error:
+                change rejected to yes
+                expect error_message contains "explicit orm_whole_table" to be yes
+            end try
+            expect rejected to be yes
+            call orm_where with requested and (orm_compare of "slug" and "in" and ["a" and "b"])
+            call orm_page with requested and 1 and 0
+            store changed_rows as orm_update of session and requested and [(orm_value of "note" and "changed")]
+            expect changed_rows["affected_rows"] to equal 1
+            store b_record as orm_find_key of session and entries and "2"
+            expect orm_get of b_record and "note" to equal nothing
+            store deleted_rows as orm_delete of session and requested
+            expect deleted_rows["affected_rows"] to equal 1
+            expect orm_count of session and (orm_query of entries) to equal 2
+            store whole as orm_whole_table of (orm_query of entries)
+            store deleted_remaining as orm_delete of session and whole
+            expect deleted_remaining["affected_rows"] to equal 2
+        end test
+
+        test "validation failures propagate through native transaction rollback":
+            call fixture_reset_entries with session
+            store conn as session.connection
+            store rejected as no
+            try:
+                in transaction on conn:
+                    store pending as fixture_entry of session and entries and "pending"
+                    call orm_set with pending and "score" and "wrong type"
+                end transaction
+            when error:
+                change rejected to yes
+                expect error_message contains "whole number" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_count of session and (orm_query of entries) to equal 0
+        end test
+
+        test "nested transactions reject and propagate rollback without corrupting the connection":
+            call fixture_reset_entries with session
+            store conn as session.connection
+            store rejected as no
+            try:
+                in transaction on conn:
+                    store pending as fixture_entry of session and entries and "outer"
+                    in transaction on conn:
+                        store nested as fixture_entry of session and entries and "nested"
+                    end transaction
+                end transaction
+            when error:
+                change rejected to yes
+                expect (to_lowercase of error_message) contains "transaction" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_count of session and (orm_query of entries) to equal 0
+            store after_failure as fixture_entry of session and entries and "after"
+            expect orm_count of session and (orm_query of entries) to equal 1
+        end test
+
+        test "large integer identities round trip without floating point":
+            call fixture_reset_entries with session
+            call orm_sql_execute with session and "INSERT INTO entries (id, slug) VALUES (9007199254740993, ?)" and ["large"]
+            store saved as orm_find_key of session and entries and "9007199254740993"
+            expect orm_get of saved and "id" to equal "9007199254740993"
+            call orm_set with saved and "note" and "exact"
+            store updated as orm_save of session and saved
+            expect orm_get of updated and "id" to equal "9007199254740993"
+            store next_record as fixture_entry of session and entries and "next"
+            expect orm_get of next_record and "id" to equal "9007199254740994"
+        end test
+
+        test "borrowed connection ownership and inspectable query costs are explicit":
+            call fixture_reset_entries with session
+            store conn as session.connection
+            store borrowed as orm_borrow of conn
+            store secret_payload as "synthetic-secret-value"
+            store returned as orm_sql_query of borrowed and "SELECT ? AS label" and [secret_payload]
+            expect borrowed.query_count to equal 1
+            expect borrowed.last_parameter_count to equal 1
+            expect borrowed.last_sql contains secret_payload to be no
+            call orm_close with borrowed
+            call orm_close with borrowed
+            store rejected as no
+            try:
+                store invalid_read as orm_count of borrowed and (orm_query of entries)
+            when error:
+                change rejected to yes
+                expect error_message contains "session is closed" to be yes
+            end try
+            expect rejected to be yes
+            expect orm_count of session and (orm_query of entries) to equal 0
+        end test
+    end describe
+finally:
+    call orm_close with session
+    delete file at database_path
+end try

@@ -1,0 +1,9 @@
+store ready_path as path_join of args[0] and "descendant-ready.txt"
+open file at ready_path for writing as ready_handle
+wait for write content "ready" into ready_handle
+close file ready_handle
+wait for 3 seconds
+store late_path as path_join of args[0] and "descendant-late.txt"
+open file at late_path for writing as late_handle
+wait for write content "must not survive runner timeout" into late_handle
+close file late_handle

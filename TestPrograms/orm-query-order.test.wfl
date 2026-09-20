@@ -1,0 +1,23 @@
+include from "../tests/fixtures/orm-model.wfl"
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "orm-query-order"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "ordering.db"
+store session as orm_open of database_path
+store entries as fixture_entries_model
+try:
+    describe "Exact identity projection preserves SQLite ordering":
+        test "default ordering uses the integer column before projecting exact text":
+            call fixture_reset_entries with session
+            call orm_sql_execute with session and "INSERT INTO entries (id, slug) VALUES (1, 'first'), (2, 'second'), (10, 'tenth')" and []
+            store records as orm_find of session and (orm_query of entries)
+            expect length of records to equal 3
+            expect orm_get of records[0] and "id" to equal "1"
+            expect orm_get of records[1] and "id" to equal "2"
+            expect orm_get of records[2] and "id" to equal "10"
+        end test
+    end describe
+finally:
+    call orm_close with session
+    delete file at database_path
+end try

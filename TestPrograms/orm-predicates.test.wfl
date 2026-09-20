@@ -1,0 +1,127 @@
+include from "../lib/orm/predicates.wfl"
+
+create new OrmField as key_spec:
+    field_name is "id"
+    value_type is "identity"
+    primary_key is yes
+    generated is yes
+end
+create new OrmField as title_spec:
+    field_name is "title"
+end
+create new OrmField as note_spec:
+    field_name is "note"
+    nullable is yes
+end
+create new OrmModel as entries:
+    table_name is "entries"
+    fields is [key_spec and title_spec and note_spec]
+end
+
+define action called matching_ids with parameters conn and predicate:
+    store compiled as orm_compile_predicate of entries and predicate
+    return query conn with ("SELECT CAST(id AS TEXT) AS id FROM entries WHERE " with compiled.sql_text with " ORDER BY id") and parameters compiled.bound_values
+end action
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "orm-predicates"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "predicates.db"
+open database at ("sqlite://" with database_path) as conn
+try:
+    store cleared as execute conn with "DROP TABLE IF EXISTS entries"
+    store created as execute conn with "CREATE TABLE entries (id INTEGER PRIMARY KEY, title TEXT NOT NULL, note TEXT)"
+    store first_entry as execute conn with "INSERT INTO entries VALUES (1, '100%_done', NULL)"
+    store second_entry as execute conn with "INSERT INTO entries VALUES (2, '100XYZdone', '')"
+    store third_entry as execute conn with "INSERT INTO entries VALUES (3, 'third', 'memo')"
+    store fourth_entry as execute conn with "INSERT INTO entries VALUES (9007199254740993, ?, 'memo')" and parameters ["x'; DROP TABLE entries; --"]
+
+    describe "SQL filters bind values and define null behavior":
+        test "malicious values remain bound and large identities stay exact":
+            store payload as "x'; DROP TABLE entries; --"
+            store predicate as orm_compare of "title" and "equal" and payload
+            store compiled as orm_compile_predicate of entries and predicate
+            expect compiled.sql_text contains payload to be no
+            expect compiled.bound_values[0] to equal payload
+            store matched_rows as matching_ids of conn and predicate
+            expect length of matched_rows to equal 1
+            store match_row as matched_rows[0]
+            expect match_row["id"] to equal "9007199254740993"
+            store exact as matching_ids of conn and (orm_compare of "id" and "equal" and "9007199254740993")
+            expect length of exact to equal 1
+        end test
+
+        test "equality to null, inequality to null, and SQL negation are explicit":
+            store nulls as matching_ids of conn and (orm_compare of "note" and "equal" and nothing)
+            expect length of nulls to equal 1
+            store not_nulls as matching_ids of conn and (orm_compare of "note" and "not equal" and nothing)
+            expect length of not_nulls to equal 3
+            store not_memo as matching_ids of conn and (orm_not of (orm_compare of "note" and "equal" and "memo"))
+            expect length of not_memo to equal 1
+            store empty_row as not_memo[0]
+            expect empty_row["id"] to equal "2"
+        end test
+
+        test "all and any groups preserve parentheses and parameter ordering":
+            store selected_notes as orm_any of [(orm_compare of "note" and "equal" and nothing) and (orm_compare of "note" and "equal" and "memo")]
+            store selected as orm_all of [selected_notes and (orm_compare of "id" and "less than" and "4")]
+            store matched_rows as matching_ids of conn and selected
+            expect length of matched_rows to equal 2
+            store first_match as matched_rows[0]
+            store second_match as matched_rows[1]
+            expect first_match["id"] to equal "1"
+            expect second_match["id"] to equal "3"
+        end test
+
+        test "membership handles empty sets and explicit null membership":
+            store empty_matches as matching_ids of conn and (orm_compare of "id" and "in" and [])
+            expect length of empty_matches to equal 0
+            store matched_rows as matching_ids of conn and (orm_compare of "note" and "in" and [nothing and "memo"])
+            expect length of matched_rows to equal 3
+        end test
+
+        test "text searches treat wildcard characters as literal text":
+            store matched_rows as matching_ids of conn and (orm_compare of "title" and "contains" and "%_")
+            expect length of matched_rows to equal 1
+            store found_entry as matched_rows[0]
+            expect found_entry["id"] to equal "1"
+            store starts as matching_ids of conn and (orm_compare of "title" and "starts with" and "100%")
+            expect length of starts to equal 1
+        end test
+
+        test "known tautologies remain visible to the bulk-write guard":
+            store unrestricted as orm_any of [(orm_compare of "title" and "equal" and "third") and (orm_all of [])]
+            store compiled as orm_compile_predicate of entries and unrestricted
+            expect compiled.constant_kind to equal "true"
+            store no_rows as orm_compile_predicate of entries and (orm_any of [])
+            expect no_rows.constant_kind to equal "false"
+        end test
+
+        test "unknown identifiers, operators and null ordering fail safely":
+            store failures as 0
+            try:
+                store malicious as orm_compile_predicate of entries and (orm_compare of "title; DROP TABLE entries" and "equal" and "x")
+            when error:
+                change failures to failures plus 1
+                expect error_message contains "unknown field" to be yes
+            end try
+            try:
+                store malicious as orm_compile_predicate of entries and (orm_compare of "title" and "= ? OR 1=1" and "x")
+            when error:
+                change failures to failures plus 1
+                expect error_message contains "unsupported comparison" to be yes
+            end try
+            try:
+                store invalid_null as orm_compile_predicate of entries and (orm_compare of "note" and "less than" and nothing)
+            when error:
+                change failures to failures plus 1
+                expect error_message contains "null supports only" to be yes
+            end try
+            expect failures to equal 3
+            store untouched as query conn with "SELECT id FROM entries"
+            expect length of untouched to equal 4
+        end test
+    end describe
+finally:
+    close database conn
+    delete file at database_path
+end try

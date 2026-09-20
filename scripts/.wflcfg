@@ -1,0 +1,9 @@
+# Default configured budget; the complete command explicitly supplies
+# --execution-timeout 1200 before the script path. Child waits remain bounded.
+timeout_seconds = 300
+execution_logging = false
+debug_report_enabled = false
+allow_shell_execution = true
+shell_execution_mode = sanitized
+kill_on_shutdown = true
+max_buffer_size_bytes = 8388608

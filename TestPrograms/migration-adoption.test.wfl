@@ -1,0 +1,35 @@
+include from "../app/db.wfl"
+
+store artifact_dir as path_join of (path_dirname of script_directory) and "target" and "test-artifacts" and "migration-adoption"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "legacy.db"
+check if file exists at database_path:
+    delete file at database_path
+end check
+open database at ("sqlite://" with database_path) as conn
+try:
+    describe "Legacy migration adoption":
+        test "a supported sessions-only database gains audited history without losing its row":
+            in transaction on conn:
+                store created_table as execute conn with "CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT NOT NULL)"
+                store seeded as execute conn with "INSERT INTO sessions (id,user_id,created_at,expires_at) VALUES ('legacy-session',9223372036854775806,NULL,'2099-01-01')"
+            end transaction
+            call db_migrate with conn
+            store saved as query conn with "SELECT id,CAST(user_id AS TEXT) AS user_id,created_at,csrf_token FROM sessions"
+            expect length of saved to equal 1
+            store saved_row as saved[0]
+            expect saved_row["id"] to equal "legacy-session"
+            expect saved_row["user_id"] to equal "9223372036854775806"
+            expect saved_row["created_at"] to equal nothing
+            expect saved_row["csrf_token"] to equal ""
+            store history_tables as query conn with "SELECT count(*) AS n FROM sqlite_schema WHERE type='table' AND name='_orm_migrations'"
+            store history_table as history_tables[0]
+            expect history_table["n"] to equal 1
+        end test
+    end describe
+finally:
+    close database conn
+    check if file exists at database_path:
+        delete file at database_path
+    end check
+end try

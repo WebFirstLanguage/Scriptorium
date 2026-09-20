@@ -33,7 +33,11 @@ main.wfl ── listen on port ── main loop: wait for request ── route �
 Library layers, each pulled in with `include from` (see the include rule below):
 
 ```
-render.wfl ── auth.wfl ── db.wfl ── util.wfl
+render.wfl ── auth.wfl ── db.wfl ── persistence-helpers.wfl ── models.wfl
+                                                          └─ migrations.wfl
+                                                             ├─ util.wfl
+                                                             ├─ lib/orm/migrations.wfl (linear ORM chain)
+                                                             └─ immutable app/migrations versions
      └──────── lib/scribe/src/scribe.wfl   (git submodule)
 site_ext.wfl ── render.wfl                 (the site-extension seam)
 main.wfl ── site_ext.wfl  (+ defines the router and every request handler)
@@ -43,10 +47,15 @@ main.wfl ── site_ext.wfl  (+ defines the router and every request handler)
   `file_stem`, `config_value_from`, `install_validate`. Form/cookie parsing is
   *not* here: WFL's stdlib already ships `parse_form_urlencoded` and
   `parse_cookies` (both percent-decode), so we use those.
-- **db.wfl** — the SQLite schema (idempotent `CREATE TABLE IF NOT EXISTS`) and
-  every `query`/`execute` the app runs. Helpers take the connection handle as a
-  parameter, so the data layer is testable against `sqlite::memory:`. Includes
-  the installer lock (`install_is_done` / `install_mark_done` / `install_apply`).
+- **db.wfl** — compatibility actions backed by ORM models, records and queries.
+  Helpers retain the caller-owned connection and existing result maps. The
+  installer commits its first user and settings atomically. The only specialized
+  application SQL reads SQLite's clock/year in `persistence-helpers.wfl`.
+- **models.wfl** — the current mapping for all seven managed tables.
+  **migrations.wfl** and immutable version modules own schema, legacy adoption
+  and the migration ledger. Startup applies supported upgrades; the administrative
+  WFL entry point plans changes and performs explicit rollback. See
+  [ORM API](orm.md) and [migration operations](migrations.md).
 - **auth.wfl** — `hash_password`/`verify_password`, session create/lookup/delete
   (each session carries a CSRF token, validated by `csrf_ok`), and the
   `is_admin` / `can_edit` role checks.
@@ -127,15 +136,19 @@ noted inline:
 2. **Includes form a tree, not a flat namespace — diamonds break.** A file only
    sees definitions from files *it* includes (transitively), and an include that
    was already pulled in elsewhere is skipped. → The libraries form a strict
-   chain `util ← db ← auth ← render`, `main` includes only `render`, and the
+   chain shown above, `main` includes only `site_ext`, and the
    router + handlers live in `main.wfl` (so they share one scope). Scribe is
    included exactly once (by `render.wfl`).
 3. **No query strings.** *Lifted in 26.7.26* (`query` / `query of req` +
    `parse_query_string`). Scriptorium's URLs still keep state in the path
    (`/blog/page/2`) — they predate the fix and are stable, shareable URLs.
-4. **No transactions / no migration engine.** → Schema is idempotent DDL run at
-   boot; every write is a single statement. (The one post-MVP column addition,
-   `sessions.csrf_token`, is a `try`-guarded `ALTER TABLE` at boot.)
+4. **Transactions and migration ownership.** Native WFL transaction blocks pin
+   SQLite connections and roll back errors. The reusable WFL ORM and versioned
+   migration engine now own schema evolution; startup inspects and adopts
+   recognized legacy shapes, including sessions without CSRF. Schema
+   transactions require the upstream runtime prerequisites documented in
+   [runtime capabilities](runtime-capabilities.md). No broad catch treats
+   migration failure as success.
 5. **No CSRF/session helpers.** → Sessions are a random `secure_random_bytes` id
    in an `HttpOnly; SameSite=Lax` cookie, stored in a `sessions` table with a
    SQL-checked expiry. CSRF tokens ride the same table — see Security below.

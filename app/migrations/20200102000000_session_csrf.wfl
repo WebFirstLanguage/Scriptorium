@@ -1,0 +1,39 @@
+include from "20200101000000_initial.wfl"
+
+define action called historical_csrf_tables:
+    store revised_tables as []
+    for each table_spec in historical_initial_tables:
+        check if table_spec.model_spec.table_name is equal to "sessions":
+            store revised_fields as []
+            for each field_spec in table_spec.model_spec.fields:
+                push with revised_fields and field_spec
+            end for
+            push with revised_fields and (historical_default of "csrf_token" and "")
+            create new OrmModel as revised_model:
+                table_name is "sessions"
+                fields is revised_fields
+            end
+            push with revised_tables and (orm_schema_table of revised_model)
+        otherwise:
+            push with revised_tables and table_spec
+        end check
+    end for
+    return revised_tables
+end action
+
+define action called migration_20200102000000 with parameters immutable_source:
+    store before_tables as historical_initial_tables
+    store after_tables as historical_csrf_tables
+    store before_sessions as before_tables[1]
+    store after_sessions as after_tables[1]
+    create new OrmMigration as migration_spec:
+        migration_id is "20200102000000"
+        migration_name is "Persist session CSRF tokens"
+        up_steps is [(orm_migration_add_column of before_sessions and after_sessions and (historical_default of "csrf_token" and ""))]
+        irreversible_reason is "removing csrf_token would discard live session security state"
+        managed_before is before_tables
+        managed_after is after_tables
+        source_text is immutable_source
+    end
+    return migration_spec
+end action

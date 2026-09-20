@@ -1,0 +1,36 @@
+include from "20260920000000_initial.wfl"
+
+define action called example_index_migration with parameters source_text:
+    store notes_before as example_v1_notes
+    create new OrmIndex as owner_index:
+        index_name is "example_notes_author"
+        field_names is ["author_id"]
+    end
+    create new OrmModel as notes_after:
+        table_name is "example_notes"
+        fields is notes_before.fields
+        indexes is [owner_index]
+    end
+    store authors_table as orm_schema_table of (example_v1_authors)
+    create new OrmMigration as indexed:
+        migration_id is "20260920000100"
+        migration_name is "Index note ownership"
+        up_steps is [(orm_migration_create_index of (orm_schema_table of notes_after) and owner_index)]
+        down_steps is [(orm_migration_drop_index of (orm_schema_table of notes_after) and owner_index)]
+        managed_before is [authors_table and (orm_schema_table of notes_before)]
+        managed_after is [authors_table and (orm_schema_table of notes_after)]
+        source_text is source_text
+    end
+    return indexed
+end action
+
+define action called example_registry:
+    store migration_dir as path_join of current_directory and "examples" and "orm" and "migrations"
+    open file at (path_join of migration_dir and "20260920000000_initial.wfl") for reading as initial_file
+    wait for store initial_source as read content from initial_file
+    close file initial_file
+    open file at (path_join of migration_dir and "20260920000100_author_index.wfl") for reading as index_file
+    wait for store index_source as read content from index_file
+    close file index_file
+    return [(example_initial_migration of initial_source) and (example_index_migration of index_source)]
+end action

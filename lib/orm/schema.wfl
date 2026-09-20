@@ -1,0 +1,329 @@
+include from "relationships.wfl"
+
+// Physical schema is separate from logical record relationships. Historical
+// migrations own these declarations; current application models do not edit them.
+create container OrmForeignKey:
+    property field_names: List defaults []
+    property target_table: Text defaults ""
+    property target_fields: List defaults []
+    property on_delete: Text defaults "NO ACTION"
+    property on_update: Text defaults "NO ACTION"
+end
+
+create container OrmSchemaTable:
+    property model_spec
+    property foreign_keys: List defaults []
+end
+
+define action called orm_schema_table with parameters model_spec:
+    store checked_model as orm_require_model of model_spec
+    create new OrmSchemaTable as table_spec:
+        model_spec is model_spec
+    end
+    return table_spec
+end action
+
+define action called orm_schema_literal with parameters literal_value:
+    check if literal_value is nothing:
+        return "NULL"
+    end check
+    check if (typeof of literal_value) is equal to "Text":
+        return "'" with (replace "'" with "''" in literal_value) with "'"
+    end check
+    check if (typeof of literal_value) is equal to "Boolean":
+        check if literal_value:
+            return "1"
+        end check
+        return "0"
+    end check
+    check if (typeof of literal_value) is equal to "Number":
+        return "" with literal_value
+    end check
+    call orm_fail with "schema" and "defaults must be text, a finite number, boolean, or NULL"
+end action
+
+define action called orm_schema_column with parameters field_spec:
+    store field_problem as orm_field_problem of field_spec
+    check if field_problem is not equal to "":
+        call orm_fail with "schema field" and field_problem
+    end check
+    store type_text as "TEXT"
+    check if field_spec.value_type is equal to "integer" or field_spec.value_type is equal to "identity" or field_spec.value_type is equal to "boolean":
+        change type_text to "INTEGER"
+    end check
+    check if field_spec.value_type is equal to "number":
+        change type_text to "REAL"
+    end check
+    store column_sql as (orm_quote of field_spec.field_name) with " " with type_text
+    check if field_spec.primary_key:
+        change column_sql to column_sql with " PRIMARY KEY"
+    end check
+    check if field_spec.generated:
+        change column_sql to column_sql with " AUTOINCREMENT"
+    end check
+    check if field_spec.unique_value:
+        change column_sql to column_sql with " UNIQUE"
+    end check
+    // SQLite's generated INTEGER PRIMARY KEY already rejects NULL storage.
+    // Omitting redundant NOT NULL preserves the original application schema.
+    check if field_spec.nullable is equal to no and field_spec.generated is equal to no:
+        change column_sql to column_sql with " NOT NULL"
+    end check
+    check if field_spec.has_default:
+        change column_sql to column_sql with " DEFAULT " with (orm_schema_literal of field_spec.default_value)
+    end check
+    check if field_spec.server_default is equal to "current timestamp":
+        change column_sql to column_sql with " DEFAULT (datetime('now'))"
+    end check
+    return column_sql
+end action
+
+define action called orm_schema_names with parameters field_names:
+    store quoted_names as []
+    for each field_name in field_names:
+        push with quoted_names and (orm_quote of field_name)
+    end for
+    return join of quoted_names and ", "
+end action
+
+define action called orm_schema_create_sql with parameters table_spec and actual_name:
+    store model_spec as table_spec.model_spec
+    store valid_model as orm_require_model of model_spec
+    store clauses as []
+    for each field_spec in model_spec.fields:
+        push with clauses and (orm_schema_column of field_spec)
+    end for
+    for each foreign_spec in table_spec.foreign_keys:
+        check if (length of foreign_spec.field_names) is equal to 0 or (length of foreign_spec.field_names) is not equal to (length of foreign_spec.target_fields):
+            call orm_fail with "schema foreign key" and "declare equal nonempty local and target field lists"
+        end check
+        for each local_name in foreign_spec.field_names:
+            check if (orm_field_named of model_spec and local_name) is nothing:
+                call orm_fail with "schema foreign key" and "declare each local field on the table"
+            end check
+        end for
+        store allowed_actions as ["NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT"]
+        check if (contains of allowed_actions and foreign_spec.on_delete) is equal to no or (contains of allowed_actions and foreign_spec.on_update) is equal to no:
+            call orm_fail with "schema foreign key" and "use a supported SQLite referential action"
+        end check
+        push with clauses and ("FOREIGN KEY (" with (orm_schema_names of foreign_spec.field_names) with ") REFERENCES " with (orm_quote of foreign_spec.target_table) with " (" with (orm_schema_names of foreign_spec.target_fields) with ") ON DELETE " with foreign_spec.on_delete with " ON UPDATE " with foreign_spec.on_update)
+    end for
+    return "CREATE TABLE " with (orm_quote of actual_name) with " (" with (join of clauses and ", ") with ")"
+end action
+
+define action called orm_schema_index_sql with parameters table_spec and index_spec:
+    store unique_text as ""
+    check if index_spec.unique_values:
+        change unique_text to "UNIQUE "
+    end check
+    return "CREATE " with unique_text with "INDEX " with (orm_quote of index_spec.index_name) with " ON " with (orm_quote of table_spec.model_spec.table_name) with " (" with (orm_schema_names of index_spec.field_names) with ")"
+end action
+
+// Compare authored schema conservatively. Whitespace, identifier quoting and
+// ASCII case outside string literals are immaterial; literal bytes are not.
+// Extra constraints, column clauses, collation, STRICT and WITHOUT ROWID remain
+// visible. Unknown declarations are rejected, never silently normalized away.
+define action called orm_schema_normalize with parameters sql_text:
+    store tokens as []
+    store word_text as ""
+    store source_index as 0
+    store source_length as length of sql_text
+    repeat while source_index is less than source_length:
+        store next_char as substring of sql_text and source_index and 1
+        change source_index to source_index plus 1
+        check if contains of "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$" and next_char:
+            change word_text to word_text with (tolowercase of next_char)
+        otherwise:
+            check if word_text is not equal to "":
+                push with tokens and word_text
+                change word_text to ""
+            end check
+            check if contains of "'\"`[" and next_char:
+                store quote_end as next_char
+                check if next_char is equal to "[":
+                    change quote_end to "]"
+                end check
+                store quoted_text as ""
+                store closed_quote as no
+                repeat while source_index is less than source_length:
+                    store quoted_char as substring of sql_text and source_index and 1
+                    change source_index to source_index plus 1
+                    check if quoted_char is equal to quote_end:
+                        check if source_index is less than source_length and (substring of sql_text and source_index and 1) is equal to quote_end and quote_end is not equal to "]":
+                            change quoted_text to quoted_text with quoted_char
+                            change source_index to source_index plus 1
+                        otherwise:
+                            change closed_quote to yes
+                            break
+                        end check
+                    otherwise:
+                        change quoted_text to quoted_text with quoted_char
+                    end check
+                end repeat
+                check if closed_quote is equal to no:
+                    call orm_fail with "schema inspection" and "unterminated quoted schema token; repair the schema before migration"
+                end check
+                check if next_char is equal to "'":
+                    push with tokens and ("literal:" with (stringify_json of quoted_text))
+                otherwise:
+                    check if (orm_identifier_problem of quoted_text) is equal to "":
+                        push with tokens and (tolowercase of quoted_text)
+                    otherwise:
+                        push with tokens and ("identifier:" with (stringify_json of quoted_text))
+                    end check
+                end check
+            otherwise:
+                check if (contains of " \r\n\t;" and next_char) is equal to no:
+                    push with tokens and next_char
+                end check
+            end check
+        end check
+    end repeat
+    check if word_text is not equal to "":
+        push with tokens and word_text
+    end check
+    return stringify_json of tokens
+end action
+
+define action called orm_schema_exists with parameters session and table_name:
+    store rows_found as orm_sql_query of session and "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name=? COLLATE NOCASE" and [table_name]
+    return (length of rows_found) is greater than 0
+end action
+
+define action called orm_schema_problem with parameters session and table_spec:
+    store table_name as table_spec.model_spec.table_name
+    store rows_found as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='table' AND name=? COLLATE NOCASE" and [table_name]
+    check if (length of rows_found) is not equal to 1:
+        return "missing managed table " with table_name
+    end check
+    store schema_row as rows_found[0]
+    store expected_sql as orm_schema_create_sql of table_spec and table_name
+    check if (orm_schema_normalize of schema_row["sql"]) is not equal to (orm_schema_normalize of expected_sql):
+        return "managed table " with table_name with " differs from its immutable migration declaration; restore the expected schema or author a reviewed migration"
+    end check
+    for each index_spec in table_spec.model_spec.indexes:
+        store index_rows as orm_sql_query of session and "SELECT sql FROM sqlite_schema WHERE type='index' AND name=? COLLATE NOCASE AND tbl_name=? COLLATE NOCASE" and [index_spec.index_name, table_name]
+        check if (length of index_rows) is not equal to 1:
+            return "missing managed index " with index_spec.index_name
+        end check
+        store index_row as index_rows[0]
+        check if (orm_schema_normalize of index_row["sql"]) is not equal to (orm_schema_normalize of (orm_schema_index_sql of table_spec and index_spec)):
+            return "managed index " with index_spec.index_name with " differs from its immutable migration declaration"
+        end check
+    end for
+    return ""
+end action
+
+define action called orm_schema_require with parameters session and table_specs:
+    for each table_spec in table_specs:
+        store schema_problem as orm_schema_problem of session and table_spec
+        check if schema_problem is not equal to "":
+            call orm_fail with "schema drift" and schema_problem
+        end check
+    end for
+    return yes
+end action
+
+define action called orm_schema_create with parameters session and table_spec:
+    store created_table as orm_sql_execute of session and (orm_schema_create_sql of table_spec and table_spec.model_spec.table_name) and []
+    for each index_spec in table_spec.model_spec.indexes:
+        store created_index as orm_sql_execute of session and (orm_schema_index_sql of table_spec and index_spec) and []
+    end for
+    return yes
+end action
+
+// Call only within the engine's native schema transaction. Explicit source and
+// target columns preserve NULL/empty text and exact SQL integers without a WFL
+// round-trip. Extension indexes/triggers are recreated from SQLite's own SQL.
+define action called orm_schema_rebuild with parameters session and before_table and after_table and source_fields and target_fields:
+    store table_name as before_table.model_spec.table_name
+    check if table_name is not equal to after_table.model_spec.table_name:
+        call orm_fail with "schema rebuild" and "rebuild keeps the table name; author a separate explicit rename migration"
+    end check
+    check if (length of source_fields) is equal to 0 or (length of source_fields) is not equal to (length of target_fields):
+        call orm_fail with "schema rebuild" and "declare matching nonempty source and target copy columns"
+    end check
+    for each field_name in source_fields:
+        check if (orm_field_named of before_table.model_spec and field_name) is nothing:
+            call orm_fail with "schema rebuild" and "copy source field is not declared in the prior schema"
+        end check
+    end for
+    for each field_name in target_fields:
+        check if (orm_field_named of after_table.model_spec and field_name) is nothing:
+            call orm_fail with "schema rebuild" and "copy target field is not declared in the next schema"
+        end check
+    end for
+    store unique_sources as []
+    store unique_targets as []
+    store mapping_position as 0
+    for each field_name in source_fields:
+        store target_name as target_fields[mapping_position]
+        check if (contains of unique_sources and field_name) or (contains of unique_targets and target_name):
+            call orm_fail with "schema rebuild" and "copy mappings must not repeat source or target fields"
+        end check
+        push with unique_sources and field_name
+        push with unique_targets and target_name
+        check if (orm_field_named of after_table.model_spec and field_name) is not nothing and target_name is not equal to field_name:
+            call orm_fail with "schema rebuild" and "retained fields must copy to their same named destination; declare renames by removing the old field from the next schema"
+        end check
+        change mapping_position to mapping_position plus 1
+    end for
+    for each prior_field in before_table.model_spec.fields:
+        check if (orm_field_named of after_table.model_spec and prior_field.field_name) is not nothing and (contains of source_fields and prior_field.field_name) is equal to no:
+            call orm_fail with "schema rebuild" and "every retained field needs an explicit copy mapping; omission would discard existing values"
+        end check
+    end for
+    store prior_problem as orm_schema_problem of session and before_table
+    check if prior_problem is not equal to "":
+        call orm_fail with "schema rebuild" and prior_problem
+    end check
+    store extension_objects as orm_sql_query of session and "SELECT type,name,sql FROM sqlite_schema WHERE tbl_name=? COLLATE NOCASE AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name" and [table_name]
+    // SQLite permits creating a trigger that later references an absent column.
+    // Without a SQL dependency parser, refuse that ambiguous case before DROP.
+    for each prior_field in before_table.model_spec.fields:
+        check if (orm_field_named of after_table.model_spec and prior_field.field_name) is nothing:
+            for each extension_object in extension_objects:
+                check if extension_object["type"] is equal to "trigger":
+                    call orm_fail with "schema rebuild" and "removing columns from a table with extension triggers requires an explicit reviewed trigger migration before the rebuild"
+                end check
+            end for
+        end check
+    end for
+    store temporary_name as "_orm_rebuild_" with table_name
+    check if orm_schema_exists of session and temporary_name:
+        call orm_fail with "schema rebuild" and "the reserved rebuild table already exists; investigate interrupted or unrelated manual changes"
+    end check
+    store old_sequence as nothing
+    check if orm_schema_exists of session and "sqlite_sequence":
+        store sequence_rows as orm_sql_query of session and "SELECT CAST(seq AS TEXT) AS seq FROM sqlite_sequence WHERE name=? COLLATE NOCASE" and [table_name]
+        check if (length of sequence_rows) is greater than 0:
+            store sequence_row as sequence_rows[0]
+            change old_sequence to sequence_row["seq"]
+        end check
+    end check
+    store created_table as orm_sql_execute of session and (orm_schema_create_sql of after_table and temporary_name) and []
+    store copied_rows as orm_sql_execute of session and ("INSERT INTO " with (orm_quote of temporary_name) with " (" with (orm_schema_names of target_fields) with ") SELECT " with (orm_schema_names of source_fields) with " FROM " with (orm_quote of table_name)) and []
+    store dropped_table as orm_sql_execute of session and ("DROP TABLE " with (orm_quote of table_name)) and []
+    store renamed_table as orm_sql_execute of session and ("ALTER TABLE " with (orm_quote of temporary_name) with " RENAME TO " with (orm_quote of table_name)) and []
+    for each index_spec in after_table.model_spec.indexes:
+        store created_index as orm_sql_execute of session and (orm_schema_index_sql of after_table and index_spec) and []
+    end for
+    for each extension_object in extension_objects:
+        store managed_index as no
+        for each index_spec in before_table.model_spec.indexes:
+            check if (tolowercase of extension_object["name"]) is equal to (tolowercase of index_spec.index_name):
+                change managed_index to yes
+            end check
+        end for
+        check if managed_index is equal to no:
+            store recreated_object as orm_sql_execute of session and extension_object["sql"] and []
+        end check
+    end for
+    check if old_sequence is not nothing:
+        store next_key as orm_primary_field of after_table.model_spec
+        check if next_key.generated:
+            store kept_sequence as orm_sql_execute of session and "UPDATE sqlite_sequence SET seq=MAX(seq,CAST(? AS INTEGER)) WHERE name=?" and [old_sequence, table_name]
+        end check
+    end check
+    return yes
+end action

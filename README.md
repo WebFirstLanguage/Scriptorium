@@ -37,6 +37,11 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 - **Swappable themes** — the public site is built from reusable **sections** and
   assembled into pages: every page is a **header** + a **body** + a **footer**,
   in that order (`themes/base/`). See [`docs/THEMING.md`](docs/THEMING.md).
+- **Reusable WFL ORM and versioned SQLite migrations** — validated models,
+  records, composed queries, explicit relationship loading and transactional
+  upgrades for all seven application tables. See the [ORM API](docs/orm.md),
+  [executable progression](examples/orm/progression.test.wfl), and
+  [migration and recovery guide](docs/migrations.md).
 
 | Admin dashboard | Post editor | Sign in |
 |---|---|---|
@@ -44,7 +49,14 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 
 ## Quick start
 
-You need the WFL interpreter (`wfl`) on your PATH. Scriptorium keeps the
+You need the WFL interpreter (`wfl`) on your PATH. The verified official runtime
+is nightly **26.9.16** from source `23c1a457` (or a newer runtime retaining its
+application-error, schema-transaction, HTTP, owned-process and finite invocation-budget capabilities).
+Official 26.9.12 lacks those prerequisites. See the
+[runtime verification record](docs/orm-verification.md) for immutable provenance.
+The complete test command uses the published `--execution-timeout` option to
+give the runner a finite 20-minute budget while preserving per-suite deadlines.
+Scriptorium keeps the
 [Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
 submodule, so clone with submodules:
 
@@ -61,7 +73,8 @@ the working directory):
 wfl main.wfl
 ```
 
-On first run Scriptorium creates `scriptorium.db`, seeds default settings, and
+On first run Scriptorium creates `scriptorium.db` through versioned migrations,
+seeds default settings, and
 locks the site behind a **one-page installer**. The console does not print a
 password:
 
@@ -211,19 +224,19 @@ docs/                 Architecture notes + THEMING.md + PROJECT-LAYOUT.md + scre
 
 ## Tests
 
-From the repository root, with Python 3.11+ and WFL on PATH:
+From the repository root, with WFL, Git and Python 3.11+ on PATH (Python is
+only needed for the repository hygiene checker):
 
 ```sh
-python scripts/run_tests.py                  # all five Scriptorium suites
-python scripts/run_tests.py --include-scribe # also test the pinned Scribe engine
-python -m unittest discover -s tests/integration -v # HTTP port configuration
-python -m unittest discover -s tests/tooling -v
+wfl --execution-timeout 1200 scripts/run_tests.wfl # complete suite, including Scribe
+wfl scripts/run_tests.wfl --group integration # focused HTTP workflows
+wfl scripts/run_tests.wfl --group tooling     # runner and hygiene regressions
 python scripts/check_repo_hygiene.py
 ```
 
 Individual suites still run with `wfl --test TestPrograms/<name>.test.wfl`.
-The [WFL tests workflow](.github/workflows/wfl-tests.yml) runs all five
-Scriptorium suites and the pinned Scribe suite on Blacksmith Linux using the
+The [WFL tests workflow](.github/workflows/wfl-tests.yml) runs application,
+ORM/migration/recovery, HTTP, tooling, examples and pinned Scribe suites on Blacksmith Linux using the
 latest `bsbyrdwfl/wfl:nightly` Docker image. It pulls the nightly tag on each run
 and records the resolved image digest, runtime version, and tested source
 revisions in the job summary. The Governance workflow checks tooling and
@@ -248,7 +261,7 @@ tested against this Scriptorium — but it also means Scribe moving forward does
 ```sh
 scripts/update-scribe.sh --check   # is there a newer Scribe? (changes nothing)
 scripts/update-scribe.sh           # bump lib/scribe to the tip of Scribe main
-python scripts/run_tests.py --include-scribe # app and upstream regression suites
+wfl --execution-timeout 1200 scripts/run_tests.wfl # complete suite, including upstream Scribe
 git commit -m "chore(scribe): update lib/scribe"
 ```
 

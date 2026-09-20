@@ -1,0 +1,272 @@
+// All fixtures and assertions are WFL. Python runs only the existing checker.
+include from "../../scripts/test_support.wfl"
+
+store repo_root as path_dirname of (path_dirname of script_directory)
+store checker_path as path_join of repo_root and "scripts/check_repo_hygiene.py"
+store profile_text as test_read_text of (path_join of repo_root and ".repo-hygiene.toml")
+store profile_value as parse_toml of profile_text
+store python_program as "python"
+// Optional args[1] selects the utility interpreter; args[0] is the WFL runtime.
+check if (length of args) is greater than 1:
+    change python_program to args[1]
+end check
+store artifact_root as path_join of repo_root and "target/test-artifacts/hygiene" and (generate_uuid)
+store fixture_root as ""
+
+define action called hygiene_git with parameters git_arguments:
+    store invocation as ["-C", fixture_root]
+    for each argument_value in git_arguments:
+        push with invocation and argument_value
+    end for
+    store outcome as test_execute of "git" and invocation and fixture_root and 10
+    check if outcome["exit_code"] is not equal to 0:
+        display outcome["error"]
+    end check
+    expect outcome["exit_code"] to equal 0
+    return trim of outcome["output"]
+end action
+
+define action called hygiene_write with parameters relative_path and text_value:
+    call test_write_text with (path_join of fixture_root and relative_path) and text_value
+end action
+
+define action called hygiene_binary with parameters relative_path and byte_values:
+    store destination as path_join of fixture_root and relative_path
+    call makedirs with (path_dirname of destination)
+    open file at destination for writing binary as output_file
+    try:
+        write binary byte_values into output_file
+    finally:
+        close file output_file
+    end try
+end action
+
+define action called hygiene_result with parameters expected_code and fragment:
+    store outcome as test_execute of python_program and [checker_path, "--root", fixture_root] and fixture_root and 15
+    store diagnostic_text as outcome["output"] with outcome["error"]
+    display diagnostic_text
+    expect outcome["exit_code"] to equal expected_code
+    expect diagnostic_text to contain fragment
+    return diagnostic_text
+end action
+
+define action called hygiene_fixture:
+        change fixture_root to path_join of artifact_root and (generate_uuid)
+        call makedirs with fixture_root
+        call hygiene_git with ["init", "--quiet"]
+        for each required_path in profile_value["required"]["files"]:
+            call hygiene_write with required_path and ("Fixture file." with newline)
+        end for
+        call hygiene_write with ".repo-hygiene.toml" and profile_text
+        call hygiene_write with ".gitignore" and "*.db\n*.private\n.env\n__pycache__/\n"
+        call hygiene_write with "README.md" and "[Architecture](docs/ARCHITECTURE.md)\n"
+        call hygiene_write with "static/uploads/.gitkeep" and ""
+        call hygiene_write with "app/source.wfl" and "display \"fixture\"\n"
+        call hygiene_git with ["add", "."]
+        call hygiene_git with ["update-index", "--add", "--cacheinfo", "160000", "1111111111111111111111111111111111111111", "lib/scribe"]
+end action
+
+describe "Repository hygiene regression requirements":
+    teardown:
+        check if is_dir of artifact_root:
+            call remove_dir with artifact_root and yes
+        end check
+    end teardown
+
+    test "clean checkout and uninitialized submodule pass":
+        call hygiene_fixture
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "new untracked root file is checked before staging":
+        call hygiene_fixture
+        call hygiene_write with "scratch.md" and "Unapproved root note\n"
+        call hygiene_result with 1 and "HYGIENE: root: scratch.md"
+    end test
+
+    test "new untracked root directory is rejected":
+        call hygiene_fixture
+        call hygiene_write with "notes/design.md" and "Unapproved root directory\n"
+        call hygiene_result with 1 and "HYGIENE: root: notes/design.md"
+    end test
+
+    test "legitimate docs and binary source assets pass":
+        call hygiene_fixture
+        call hygiene_write with "docs/new-guide.md" and "Maintained guide\n"
+        call hygiene_binary with "static/fonts/new.woff2" and [119, 79, 70, 50, 0, 102, 105, 120, 116, 117, 114, 101]
+        call hygiene_binary with "docs/screenshots/new.png" and [137, 80, 78, 71, 13, 10, 26, 10, 0, 102, 105, 120, 116, 117, 114, 101]
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "ignored runtime data remains untouched":
+        call hygiene_fixture
+        call hygiene_write with "scriptorium.db" and "private runtime fixture"
+        call hygiene_write with ".env" and "TOKEN=fixture\n"
+        call hygiene_result with 0 and "Repository hygiene passed"
+        expect (test_read_text of (path_join of fixture_root and "scriptorium.db")) to equal "private runtime fixture"
+    end test
+
+    test "force tracked ignored database is rejected":
+        call hygiene_fixture
+        call hygiene_write with "app/fixture.db" and "runtime fixture"
+        call hygiene_git with ["add", "--force", "app/fixture.db"]
+        call hygiene_result with 1 and "HYGIENE: artifact: app/fixture.db"
+    end test
+
+    test "repository ignores all SQLite database and sidecar forms":
+        call hygiene_fixture
+        call hygiene_write with ".gitignore" and (test_read_text of (path_join of repo_root and ".gitignore"))
+        for each extension_name in ["db", "sqlite", "sqlite3"]:
+            for each suffix_value in ["", "-journal", "-wal", "-shm"]:
+                call hygiene_write with ("site." with extension_name with suffix_value) and "local runtime fixture"
+            end for
+        end for
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "case variants and nested cache are rejected":
+        call hygiene_fixture
+        call hygiene_write with ".gitignore" and "# No ignores in this test.\n"
+        for each candidate_path in ["app/site.SQLITE3-WAL", "docs/server.LOG", "scripts/__PyCache__/bad.txt"]:
+            call hygiene_write with candidate_path and "fixture\n"
+            call hygiene_result with 1 and ("HYGIENE: artifact: " with candidate_path)
+            call remove_file with (path_join of fixture_root and candidate_path)
+        end for
+    end test
+
+    test "secret names are rejected at any depth":
+        call hygiene_fixture
+        for each candidate_path in ["app/.env.production", "docs/id_rsa", "app/secret.KEY"]:
+            call hygiene_write with candidate_path and "fixture\n"
+            call hygiene_result with 1 and ("HYGIENE: artifact: " with candidate_path)
+            call remove_file with (path_join of fixture_root and candidate_path)
+        end for
+    end test
+
+    test "uploads cannot use the source image exception":
+        call hygiene_fixture
+        call hygiene_binary with "static/uploads/photo.png" and [137, 80, 78, 71, 0, 102, 105, 120, 116, 117, 114, 101]
+        call hygiene_result with 1 and "HYGIENE: runtime-state: static/uploads/photo.png"
+    end test
+
+    test "only empty declared upload placeholder is allowed":
+        call hygiene_fixture
+        call hygiene_write with "static/uploads/.gitkeep" and "runtime bytes\n"
+        call hygiene_result with 1 and "HYGIENE: runtime-state: static/uploads/.gitkeep"
+    end test
+
+    test "removed and empty required policies both fail":
+        call hygiene_fixture
+        call remove_file with (path_join of fixture_root and "GOVERNANCE.md")
+        call hygiene_result with 1 and "HYGIENE: required: GOVERNANCE.md"
+        call hygiene_write with "GOVERNANCE.md" and ""
+        call hygiene_result with 1 and "required file is empty"
+    end test
+
+    test "ignored required policy cannot pass by existing locally":
+        call hygiene_fixture
+        call hygiene_git with ["rm", "--cached", "--force", "GOVERNANCE.md"]
+        call hygiene_write with ".gitignore" and "GOVERNANCE.md\n"
+        call hygiene_result with 1 and "HYGIENE: required: GOVERNANCE.md"
+    end test
+
+    test "unstaged worktree link changes are checked":
+        call hygiene_fixture
+        call hygiene_write with "README.md" and "[Missing](docs/does-not-exist.md)\n"
+        call hygiene_result with 1 and "local link is missing from candidate tree"
+    end test
+
+    test "ignored local file cannot hide a broken clone link":
+        call hygiene_fixture
+        call hygiene_write with "docs/local.private" and "private fixture\n"
+        call hygiene_write with "README.md" and "[Local](docs/local.private)\n"
+        call hygiene_result with 1 and "local link is missing from candidate tree"
+    end test
+
+    test "new candidates directories and encoded paths are accepted":
+        call hygiene_fixture
+        call hygiene_write with "docs/new file.md" and "New guide\n"
+        call hygiene_write with "README.md" and "[Guide](docs/new%20file.md#title)\n[Docs](docs/)\n[Spaced](<docs/new file.md>)\n[Ref][guide]\n[guide]: docs/new%20file.md \"A guide\"\n"
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "reference and image link destinations are both checked":
+        call hygiene_fixture
+        call hygiene_write with "README.md" and "![Image](docs/missing.png)\n[ref]: docs/missing.md\n"
+        store diagnostic_text as hygiene_result of 1 and "docs/missing.png"
+        expect diagnostic_text to contain "docs/missing.md"
+    end test
+
+    test "anchors external URLs fences and submodule links are skipped":
+        call hygiene_fixture
+        call hygiene_write with "README.md" and "[Anchor](#unknown)\n[Web](https://example.invalid/nope)\n[Mail](mailto:test@example.invalid)\n[Scribe](lib/scribe/uninitialized.md)\n```md\n[Example](missing.md)\n```\n~~~md\n[Example](missing-too.md)\n~~~\n"
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "links cannot escape the checkout":
+        call hygiene_fixture
+        call hygiene_write with "README.md" and "[Outside](../outside.md)\n"
+        call hygiene_result with 1 and "local link leaves checkout"
+    end test
+
+    test "submodule contents are not recursively inspected":
+        call hygiene_fixture
+        call hygiene_write with "lib/scribe/private.db" and "upstream runtime fixture\n"
+        call hygiene_write with "lib/scribe/.env" and "upstream fixture\n"
+        call hygiene_result with 0 and "Repository hygiene passed"
+    end test
+
+    test "Scribe cannot be replaced with copied files":
+        call hygiene_fixture
+        call hygiene_git with ["update-index", "--force-remove", "lib/scribe"]
+        call hygiene_write with "lib/scribe/src/scribe.wfl" and "copied upstream fixture\n"
+        call hygiene_result with 1 and "required Git gitlink is missing"
+    end test
+
+    test "another gitlink cannot bypass artifact inspection":
+        call hygiene_fixture
+        call hygiene_git with ["update-index", "--add", "--cacheinfo", "160000", "2222222222222222222222222222222222222222", "lib/other"]
+        call hygiene_result with 1 and "HYGIENE: submodule: lib/other: unapproved gitlink"
+    end test
+
+    test "indexed symlink is rejected even as physical text":
+        call hygiene_fixture
+        call hygiene_write with "app/linked.wfl" and "../README.md"
+        store blob_identity as hygiene_git of ["hash-object", "-w", (path_join of fixture_root and "app/linked.wfl")]
+        call hygiene_git with ["update-index", "--add", "--cacheinfo", "120000", blob_identity, "app/linked.wfl"]
+        call hygiene_result with 1 and "HYGIENE: file-type: app/linked.wfl"
+    end test
+
+    test "malformed profile fails closed":
+        call hygiene_fixture
+        call hygiene_write with ".repo-hygiene.toml" and "schema = [\n"
+        call hygiene_result with 2 and "HYGIENE-ERROR"
+    end test
+
+    test "missing profile fails closed":
+        call hygiene_fixture
+        call remove_file with (path_join of fixture_root and ".repo-hygiene.toml")
+        call hygiene_result with 2 and "cannot read .repo-hygiene.toml"
+    end test
+
+    test "unknown profile key fails closed":
+        call hygiene_fixture
+        call hygiene_write with ".repo-hygiene.toml" and (replace "allowed-dirs =" with "allowed-directories =" in profile_text)
+        call hygiene_result with 2 and "missing or unknown keys"
+    end test
+
+    test "profile paths cannot escape checkout":
+        call hygiene_fixture
+        call hygiene_write with ".repo-hygiene.toml" and (replace "\"docs/ARCHITECTURE.md\"" with "\"../ARCHITECTURE.md\"" in profile_text)
+        call hygiene_result with 2 and "non-relative path"
+    end test
+
+    test "Git failure fails closed":
+        call hygiene_fixture
+        call move_file with (path_join of fixture_root and ".git") and (path_join of fixture_root and "fixture-index-away")
+        // Artifacts live below this checkout. Stop Git's parent search so the
+        // missing fixture repository cannot accidentally resolve the real one.
+        call hygiene_write with ".git" and "gitdir: ./missing-fixture-index\n"
+        call hygiene_result with 2 and "HYGIENE-ERROR: git"
+    end test
+end describe

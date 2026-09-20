@@ -26,7 +26,7 @@ jobs:
           - os: windows-latest
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +35,67 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Provision the current WFL nightly
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The GitHub daily release is an immutable mirror. The canonical
+          # publisher can release a newer runtime on the same day to this CDN.
+          $cdn = 'https://wfl.nyc3.cdn.digitaloceanspaces.com'
+          # A previously cached pointer can retain the CDN's older one-hour TTL.
+          $publicationUri = "$cdn/status.json?request=$([guid]::NewGuid().ToString('N'))"
+          $publication = Invoke-RestMethod -Uri $publicationUri
+          if ($publication.result -ne 'success' -or $publication.branch -ne 'main' -or
+              $publication.version -notmatch '^\d+\.\d+\.\d+$' -or
+              $publication.sha -notmatch '^[a-f0-9]{40}$') {
+            throw 'Invalid official WFL publication record'
+          }
+          $releaseVersion = [regex]::Escape($publication.version)
+          $pattern = if ($IsWindows) { "^wfl-$releaseVersion\.msi$" } else { "^wfl-$releaseVersion-linux-x86_64-[a-f0-9]{7,40}\.tar\.gz$" }
+          $assets = @($publication.message -split '\s+' | Where-Object { $_ -match $pattern })
+          if ($assets.Count -ne 1) { throw 'Publication must name one immutable platform-specific WFL asset' }
+          $assetName = $assets[0]
+          if (-not $IsWindows -and $assetName -match '-linux-x86_64-([a-f0-9]{7,40})\.tar\.gz$') {
+            if (-not $publication.sha.StartsWith($Matches[1])) { throw 'WFL artifact revision does not match publication' }
+          }
+          $assetUrl = "$cdn/releases/$assetName"
+          $checksum = (Invoke-WebRequest -Uri "$assetUrl.sha256").Content.Trim()
+          $checksumPattern = '^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape($assetName) + '$'
+          if ($checksum -notmatch $checksumPattern) { throw 'Invalid immutable WFL checksum sidecar' }
+          $expectedDigest = $Matches[1].ToLowerInvariant()
+          $runtimeRoot = Join-Path $env:RUNNER_TEMP 'scriptorium-wfl'
+          New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+          $archive = Join-Path $runtimeRoot $assetName
+          Invoke-WebRequest -Uri $assetUrl -OutFile $archive
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expectedDigest -ne $digest) { throw 'WFL release asset digest mismatch' }
+          if ($IsWindows) {
+            $expanded = Join-Path $runtimeRoot 'expanded'
+            $arguments = @('/a', "`"$archive`"", '/qn', "TARGETDIR=`"$expanded`"")
+            $installer = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+            if ($installer.ExitCode -ne 0) { throw "WFL extraction failed: $($installer.ExitCode)" }
+            $programs = @(Get-ChildItem -LiteralPath $expanded -Filter wfl.exe -File -Recurse)
+          } else {
+            tar -xzf $archive -C $runtimeRoot
+            if ($LASTEXITCODE -ne 0) { throw 'WFL extraction failed' }
+            $programs = @(Get-ChildItem -LiteralPath $runtimeRoot -Filter wfl -File -Recurse)
+          }
+          if ($programs.Count -ne 1) { throw 'Expected one extracted WFL executable' }
+          $runtimePath = $programs[0].FullName
+          $programs[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
+          $version = & $runtimePath --version
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted WFL runtime did not start' }
+          if ($version -ne "WebFirst Language (WFL) version $($publication.version)") { throw 'WFL executable version does not match publication' }
+          @(
+            '### Governance runtime',
+            "- Publication: $cdn/status.json",
+            "- WFL revision: $($publication.sha)",
+            "- Asset: $assetUrl",
+            "- SHA256: $digest",
+            "- Runtime: $version",
+            "- Scriptorium: $env:GITHUB_SHA"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
       - name: Test repository tooling
-        run: python -m unittest discover -s tests/tooling -v
+        run: wfl scripts/run_tests.wfl --group tooling
       - name: Check repository hygiene
         run: python scripts/check_repo_hygiene.py

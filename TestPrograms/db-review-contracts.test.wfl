@@ -1,0 +1,138 @@
+// Independent review regressions: preserve legacy wrapper contracts and make
+// ordinary SQLite nullable-key tables obey the same bulk-write page as reads.
+include from "../app/db.wfl"
+
+describe "Independent persistence compatibility review":
+    test "null session equality does not delete a null primary-key row":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call user_create with conn and "reviewer" and "synthetic hash" and "author"
+            call session_create with conn and nothing and 1 and "2099-01-01 00:00:00" and "synthetic token"
+            store deleted as session_delete of conn and nothing
+            expect deleted["affected_rows"] to equal 0
+            store remaining as query conn with "SELECT COUNT(*) AS total FROM sessions"
+            store remaining_row as remaining[0]
+            expect remaining_row["total"] to equal 1
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "null author equality does not match orphan posts":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call post_create with conn and "orphan" and "Orphan" and "body" and "draft" and nothing
+            expect length of (post_list_by_author of conn and nothing) to equal 0
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "null author equality does not match orphan pages":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call page_create with conn and "orphan" and "Orphan" and "body" and "draft" and nothing
+            expect length of (page_list_by_author of conn and nothing) to equal 0
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "text primary-key insert retains native SQLite rowid metadata":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call user_create with conn and "reviewer" and "synthetic hash" and "author"
+            store inserted as session_create of conn and "review-session" and 1 and "2099-01-01 00:00:00" and "synthetic token"
+            expect inserted["affected_rows"] to equal 1
+            expect inserted["last_insert_id"] to equal 1
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "sensitive user update retains native connection insert metadata":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call user_create with conn and "reviewer" and "synthetic hash" and "author"
+            store updated as user_set_role of conn and 1 and "admin"
+            expect updated["affected_rows"] to equal 1
+            expect updated["last_insert_id"] to equal 1
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "expired null primary-key sessions are purged":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call user_create with conn and "reviewer" and "synthetic hash" and "author"
+            call session_create with conn and nothing and 1 and "2000-01-01 00:00:00" and "synthetic token"
+            store deleted as session_purge_expired of conn
+            expect deleted["affected_rows"] to equal 1
+            store remaining as query conn with "SELECT COUNT(*) AS total FROM sessions"
+            store remaining_row as remaining[0]
+            expect remaining_row["total"] to equal 0
+        finally:
+            close database conn
+        end try
+    end test
+
+    // The following ORM contracts have no predecessor API in the baseline.
+    test "bulk update changes exactly the selected nullable-key row":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call setting_set with conn and nothing and "alpha"
+            call setting_set with conn and nothing and "bravo"
+            call setting_set with conn and "named" and "charlie"
+            store session as orm_borrow of conn
+            store requested as orm_whole_table of (orm_query of (db_settings_model))
+            call orm_order_by with requested and "svalue" and "ascending"
+            call orm_page with requested and 1 and 1
+            store selected as orm_find of session and requested
+            expect length of selected to equal 1
+            expect orm_get of selected[0] and "svalue" to equal "bravo"
+            store updated as orm_update of session and requested and [(orm_value of "svalue" and "updated")]
+            expect updated["affected_rows"] to equal 1
+            store actual_rows as query conn with "SELECT svalue FROM settings ORDER BY rowid"
+            store first_value as actual_rows[0]
+            store second_value as actual_rows[1]
+            store third_value as actual_rows[2]
+            expect first_value["svalue"] to equal "alpha"
+            expect second_value["svalue"] to equal "updated"
+            expect third_value["svalue"] to equal "charlie"
+        finally:
+            close database conn
+        end try
+    end test
+
+    test "bulk delete removes exactly the selected nullable-key row":
+        open database at "sqlite::memory:" as conn
+        try:
+            call db_migrate with conn
+            call setting_set with conn and nothing and "alpha"
+            call setting_set with conn and nothing and "bravo"
+            call setting_set with conn and "named" and "charlie"
+            store session as orm_borrow of conn
+            store requested as orm_whole_table of (orm_query of (db_settings_model))
+            call orm_order_by with requested and "svalue" and "ascending"
+            call orm_page with requested and 1 and 1
+            store deleted as orm_delete of session and requested
+            expect deleted["affected_rows"] to equal 1
+            store actual_rows as query conn with "SELECT svalue FROM settings ORDER BY rowid"
+            expect length of actual_rows to equal 2
+            store first_value as actual_rows[0]
+            store second_value as actual_rows[1]
+            expect first_value["svalue"] to equal "alpha"
+            expect second_value["svalue"] to equal "charlie"
+        finally:
+            close database conn
+        end try
+    end test
+end describe

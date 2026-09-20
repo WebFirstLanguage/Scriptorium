@@ -1,0 +1,96 @@
+include from "util.wfl"
+include from "../lib/orm/migrations.wfl"
+include from "migrations/20200102000000_session_csrf.wfl"
+
+define action called scriptorium_migration_source with parameters version_file:
+    store source_path as path_join of current_directory and "app/migrations" and version_file
+    check if (file exists at source_path) is equal to no:
+        call orm_fail with "migration source" and "an immutable migration file is missing; run from the application root and restore the complete version registry"
+    end check
+    open file at source_path for reading as source_file
+    try:
+        wait for store source_text as read content from source_file
+        return source_text
+    finally:
+        close file source_file
+    end try
+end action
+
+define action called scriptorium_migration_registry:
+    return [(migration_20200101000000 of (scriptorium_migration_source of "20200101000000_initial.wfl")), (migration_20200102000000 of (scriptorium_migration_source of "20200102000000_session_csrf.wfl"))]
+end action
+
+// Adoption supports exactly the inventoried full pre-CSRF/full current schema,
+// or a sessions-only fixture/site at either version. Unknown partial tables and
+// altered constraints fail before history or data changes. Unmanaged extension
+// tables, indexes and triggers are retained and never entered in the ledger.
+define action called scriptorium_legacy_version with parameters session and registry:
+    store first_version as registry[0]
+    store second_version as registry[1]
+    store present_names as []
+    store csrf_present as no
+    for each table_spec in first_version.managed_after:
+        check if orm_schema_exists of session and table_spec.model_spec.table_name:
+            push with present_names and table_spec.model_spec.table_name
+            store expected_table as table_spec
+            check if table_spec.model_spec.table_name is equal to "sessions":
+                store columns_found as orm_sql_query of session and "SELECT name FROM pragma_table_info('sessions') WHERE name='csrf_token'" and []
+                check if (length of columns_found) is equal to 1:
+                    change csrf_present to yes
+                    change expected_table to second_version.managed_after[1]
+                end check
+            end check
+            store schema_problem as orm_schema_problem of session and expected_table
+            check if schema_problem is not equal to "":
+                call orm_fail with "legacy adoption" and schema_problem
+            end check
+        end check
+    end for
+    check if (length of present_names) is equal to 0:
+        return 0
+    end check
+    check if (length of present_names) is not equal to 7:
+        check if (length of present_names) is not equal to 1 or present_names[0] is not equal to "sessions":
+            call orm_fail with "legacy adoption" and "unsupported partial managed schema; supported states are empty, all seven legacy tables, or sessions only; restore a complete matching backup"
+        end check
+    end check
+    check if csrf_present:
+        return 2
+    end check
+    return 1
+end action
+
+define action called scriptorium_adopt with parameters session and registry:
+    store conn as session.connection
+    in transaction on conn for schema changes:
+        // Both history presence and every supported legacy constraint are read
+        // again under the same bounded write lock used to record adoption.
+        store applied_rows as orm_migration_history of session and registry
+        check if (orm_schema_exists of session and "_orm_migrations") is equal to no:
+            store legacy_version as scriptorium_legacy_version of session and registry
+            check if legacy_version is greater than 0:
+                store final_version as registry[legacy_version minus 1]
+                for each table_spec in final_version.managed_after:
+                    check if (orm_schema_exists of session and table_spec.model_spec.table_name) is equal to no:
+                        store created_missing as orm_schema_create of session and table_spec
+                    end check
+                end for
+                store verified_tables as orm_schema_require of session and final_version.managed_after
+                store history_ready as orm_migration_ensure_history of session
+                count from 1 to legacy_version:
+                    store version_spec as registry[count minus 1]
+                    store adopted_version as orm_migration_record of session and version_spec and count and "adopt"
+                end count
+            end check
+        end check
+    end transaction
+    return yes
+end action
+
+define action called scriptorium_migrate with parameters conn:
+    store session as orm_borrow of conn
+    store registry as scriptorium_migration_registry
+    store adopted as scriptorium_adopt of session and registry
+    store migrated as orm_migrate of session and registry and "latest"
+    return yes
+end action

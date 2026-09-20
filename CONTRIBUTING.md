@@ -55,7 +55,7 @@ the baseline suites:
 
 ```sh
 wfl --version
-python scripts/run_tests.py
+wfl --execution-timeout 1200 scripts/run_tests.wfl
 ```
 
 Use `--wfl /absolute/path/to/wfl` if the interpreter is not on `PATH`; use
@@ -106,17 +106,16 @@ the PR:
 
 ```sh
 python scripts/check_repo_hygiene.py
-python -m unittest discover -s tests/tooling -v
-python scripts/run_tests.py
+wfl --execution-timeout 1200 scripts/run_tests.wfl
 ```
 
-For a Scribe pin, rendering, or template-engine integration change, also run:
+The complete command includes pinned Scribe. For a focused Scribe check, run:
 
 ```sh
-python scripts/run_tests.py --include-scribe
+wfl scripts/run_tests.wfl --group scribe
 ```
 
-The extra suite runs the pinned Scribe tests in a temporary copy because they
+The Scribe group runs the pinned tests in a temporary copy because they
 write fixtures. Follow [testing.md](testing.md) for HTTP, UI, security, migration,
 and recovery checks triggered by the change. Prose-only changes need relevant
 link, command, and hygiene checks; they do not need invented application tests.

@@ -1,0 +1,120 @@
+include from "writes.wfl"
+
+create container OrmLoadedRelation:
+    property relation_name: Text defaults ""
+    property related_records: List defaults []
+    property many: Boolean defaults no
+end
+
+define action called orm_relationship_named with parameters model_spec and relation_name:
+    for each relation_spec in model_spec.relationships:
+        check if relation_spec.relation_name is equal to relation_name:
+            return relation_spec
+        end check
+    end for
+    call orm_fail with "relationship" and "unknown relationship; declare it on the model before loading it"
+end action
+
+define action called orm_related with parameters record_value and relation_name:
+    store declared as orm_relationship_named of record_value.model_spec and relation_name
+    for each loaded in record_value.loaded_relations:
+        check if loaded.relation_name is equal to relation_name:
+            check if loaded.many:
+                return loaded.related_records
+            end check
+            check if (length of loaded.related_records) is greater than 0:
+                return loaded.related_records[0]
+            end check
+            return nothing
+        end check
+    end for
+    call orm_fail with "relationship" and "relationship is not loaded; call orm_load explicitly (no query is performed by orm_related)"
+end action
+
+define action called orm_load with parameters session and source_records and relation_name:
+    check if (length of source_records) is equal to 0:
+        return source_records
+    end check
+    check if (length of source_records) is greater than 1000:
+        call orm_fail with "relationship" and "load relationships for at most 1000 source records at a time"
+    end check
+    store first_record as source_records[0]
+    store model_spec as first_record.model_spec
+    store valid_model as orm_require_model of model_spec
+    store relation_spec as orm_relationship_named of model_spec and relation_name
+    store valid_related as orm_require_model of relation_spec.related_model
+    store unique_keys as []
+    for each source_record in source_records:
+        check if source_record.model_spec.table_name is not equal to model_spec.table_name:
+            call orm_fail with "relationship" and "a load batch must contain records from one model"
+        end check
+        store key_value as orm_get of source_record and relation_spec.local_field
+        check if (isnothing of key_value) is equal to no:
+            check if (contains of unique_keys and key_value) is equal to no:
+                push with unique_keys and key_value
+            end check
+        end check
+    end for
+    store collected as []
+    store key_offset as 0
+    repeat while key_offset is less than (length of unique_keys):
+        store batch_keys as []
+        repeat while key_offset is less than (length of unique_keys) and (length of batch_keys) is less than 100:
+            push with batch_keys and unique_keys[key_offset]
+            change key_offset to key_offset plus 1
+        end repeat
+        store requested as orm_query of relation_spec.related_model
+        call orm_where with requested and (orm_compare of relation_spec.related_field and "in" and batch_keys)
+        store page_offset as 0
+        store has_more as yes
+        repeat while has_more:
+            call orm_page with requested and 1000 and page_offset
+            store related_page as orm_find of session and requested
+            for each related_record in related_page:
+                check if (length of collected) is greater than or equal to 10000:
+                    call orm_fail with "relationship" and "eager loading is limited to 10000 related records; query the related model in explicit pages"
+                end check
+                push with collected and related_record
+            end for
+            change has_more to (length of related_page) is equal to 1000
+            change page_offset to page_offset plus 1000
+        end repeat
+    end repeat
+    // Assemble every result first. A validation/query error cannot leave only
+    // part of the source batch marked as loaded.
+    store pending_relations as []
+    for each source_record in source_records:
+        store local_value as orm_get of source_record and relation_spec.local_field
+        store related_records as []
+        check if (isnothing of local_value) is equal to no:
+            for each related_record in collected:
+                store related_value as orm_get of related_record and relation_spec.related_field
+                check if related_value is equal to local_value:
+                    push with related_records and related_record
+                end check
+            end for
+        end check
+        check if relation_spec.many is equal to no and (length of related_records) is greater than 1:
+            call orm_fail with "relationship" and "a single-record relationship matched multiple rows; restore the declared unique constraint"
+        end check
+        create new OrmLoadedRelation as loaded:
+            relation_name is relation_name
+            related_records is related_records
+            many is relation_spec.many
+        end
+        push with pending_relations and loaded
+    end for
+    store source_index as 0
+    for each source_record in source_records:
+        store revised_relations as []
+        for each existing_relation in source_record.loaded_relations:
+            check if existing_relation.relation_name is not equal to relation_name:
+                push with revised_relations and existing_relation
+            end check
+        end for
+        push with revised_relations and pending_relations[source_index]
+        source_record.replace_relations(revised_relations)
+        change source_index to source_index plus 1
+    end for
+    return source_records
+end action

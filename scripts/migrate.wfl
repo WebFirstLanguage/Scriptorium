@@ -1,0 +1,220 @@
+// Run from the application root, exactly like main.wfl. Configuration is read
+// using the same parser; read-only commands never create a database/directory.
+include from "../app/migrations.wfl"
+
+define action called migration_cli_usage:
+    display "Usage: wfl scripts/migrate.wfl status|plan|up [--target ID|latest] [--database PATH]"
+    display "       wfl scripts/migrate.wfl down --count N|--target ID|zero [--database PATH]"
+    display "       wfl scripts/migrate.wfl new ascii_name"
+    return yes
+end action
+
+define action called migration_cli_show with parameters migration_plan:
+    display "Applied migrations: " with (length of migration_plan.applied)
+    for each applied_row in migration_plan.applied:
+        display "  applied " with applied_row["migration_id"] with " " with applied_row["migration_name"]
+    end for
+    display "Pending migrations: " with (length of migration_plan.pending)
+    for each pending_id in migration_plan.pending:
+        display "  pending " with pending_id
+    end for
+    return yes
+end action
+
+define action called migration_cli_new with parameters migration_name:
+    check if (orm_identifier_problem of migration_name) is not equal to "":
+        call orm_fail with "migration scaffold" and "use an ASCII name such as add_post_summary; paths and punctuation are not accepted"
+    end check
+    store registry as scriptorium_migration_registry
+    store known_ids as orm_migration_registry_check of registry
+    store latest_version as registry[(length of registry) minus 1]
+    store utc_stamp as utc_now
+    store version_id as format_datetime of utc_stamp and "%Y%m%d%H%M%S"
+    check if (orm_decimal_exceeds of version_id and latest_version.migration_id) is equal to no:
+        call orm_fail with "migration scaffold" and "the clock does not follow the latest version ID; correct the clock before scaffolding"
+    end check
+    store migration_dir as path_join of current_directory and "app/migrations"
+    store previous_file as ""
+    for each entry_name in (list_dir of migration_dir):
+        check if entry_name starts with (latest_version.migration_id with "_") and entry_name ends with ".wfl":
+            check if previous_file is not equal to "":
+                call orm_fail with "migration scaffold" and "multiple files use the latest version ID; restore an unambiguous registry"
+            end check
+            change previous_file to entry_name
+        end check
+        check if entry_name starts with (version_id with "_"):
+            call orm_fail with "migration scaffold" and "a file already uses this second's ID; retry after the clock advances"
+        end check
+    end for
+    check if previous_file is equal to "":
+        call orm_fail with "migration scaffold" and "the latest registered source file is missing"
+    end check
+    store new_name as version_id with "_" with migration_name with ".wfl"
+    store new_path as path_join of migration_dir and new_name
+    store source_text as "// New immutable historical migration. Complete and review before registration.\ninclude from \"" with previous_file with "\"\n\ndefine action called migration_" with version_id with " with parameters immutable_source:\n    store previous_version as migration_" with latest_version.migration_id with " of (scriptorium_migration_source of \"" with previous_file with "\")\n    create new OrmMigration as migration_spec:\n        migration_id is \"" with version_id with "\"\n        migration_name is \"" with migration_name with "\"\n        // Replace these lists with explicit typed up/down steps.\n        up_steps is []\n        down_steps is []\n        irreversible_reason is \"TODO: describe why rollback cannot restore the data, or supply lossless down steps\"\n        managed_before is previous_version.managed_after\n        // Declare the complete next historical schema, independent of app/models.\n        managed_after is previous_version.managed_after\n        source_text is immutable_source\n    end\n    return migration_spec\nend action\n"
+    open file at new_path for writing as scaffold_file
+    try:
+        wait for write content source_text into scaffold_file
+    finally:
+        close file scaffold_file
+    end try
+    display "Created " with new_path
+    display "Complete the historical before/after declarations and up/down steps; empty scaffolds are rejected."
+    display "In app/migrations.wfl replace its final historical include with migrations/" with new_name
+    display "Append migration_" with version_id with " of (scriptorium_migration_source of \"" with new_name with "\") to scriptorium_migration_registry."
+    display "Run plan, review the generated SQL in the declaration, test up/down on a copied database, then commit the immutable file and registry."
+    return yes
+end action
+
+store operation_name as ""
+store requested_target as "latest"
+store target_given as no
+store requested_count as nothing
+store database_override as ""
+store scaffold_name as ""
+store argument_index as 0
+try:
+    repeat while argument_index is less than (length of args):
+        store argument_text as args[argument_index]
+        change argument_index to argument_index plus 1
+        check if argument_text is equal to "--help":
+            call migration_cli_usage
+            exit program
+        end check
+        check if argument_text is equal to "--database" or argument_text is equal to "--target" or argument_text is equal to "--count":
+            check if argument_index is greater than or equal to (length of args):
+                call orm_fail with "migration arguments" and ("missing value for " with argument_text)
+            end check
+            store argument_value as args[argument_index]
+            change argument_index to argument_index plus 1
+            check if argument_text is equal to "--database":
+                change database_override to argument_value
+            end check
+            check if argument_text is equal to "--target":
+                change requested_target to argument_value
+                change target_given to yes
+            end check
+            check if argument_text is equal to "--count":
+                // Decimal validation avoids using a parsing exception as control
+                // flow and never treats malformed input as the default count.
+                check if (length of argument_value) is equal to 0 or (length of argument_value) is greater than 6:
+                    call orm_fail with "rollback count" and "use a positive whole migration count"
+                end check
+                count from 0 to (length of argument_value) minus 1:
+                    check if (contains of "0123456789" and (substring of argument_value and count and 1)) is equal to no:
+                        call orm_fail with "rollback count" and "use a positive whole migration count"
+                    end check
+                end count
+                change requested_count to to_int of argument_value and 0
+            end check
+        otherwise:
+            check if operation_name is equal to "":
+                change operation_name to argument_text
+            otherwise:
+                check if operation_name is equal to "new" and scaffold_name is equal to "":
+                    change scaffold_name to argument_text
+                otherwise:
+                    call orm_fail with "migration arguments" and "unexpected argument; use --help for the exact syntax"
+                end check
+            end check
+        end check
+    end repeat
+    check if operation_name is equal to "new":
+        check if database_override is not equal to "" or target_given or requested_count is not nothing:
+            call orm_fail with "migration arguments" and "new accepts only a migration name"
+        end check
+        call migration_cli_new with scaffold_name
+        exit program
+    end check
+    check if (contains of ["status", "plan", "up", "down"] and operation_name) is equal to no:
+        call migration_cli_usage
+        call orm_fail with "migration arguments" and "select status, plan, up, down, or new"
+    end check
+    check if operation_name is not equal to "down" and requested_count is not nothing:
+        call orm_fail with "migration arguments" and "--count is only valid with down"
+    end check
+    check if operation_name is equal to "down":
+        check if (target_given and requested_count is not nothing) or (target_given is equal to no and requested_count is nothing):
+            call orm_fail with "migration arguments" and "down requires exactly one of --count or --target"
+        end check
+    end check
+    store cfg_text as ""
+    check if file exists at ".wflcfg":
+        open file at ".wflcfg" for reading as cfg_file
+        try:
+            wait for change cfg_text to read content from cfg_file
+        finally:
+            close file cfg_file
+        end try
+    end check
+    store data_root as config_value_from of cfg_text and "data_dir" and ""
+    store database_path as path_join of current_directory and "scriptorium.db"
+    check if data_root is not equal to "":
+        change database_path to path_join of current_directory and data_root and "scriptorium.db"
+    end check
+    check if database_override is not equal to "":
+        change database_path to path_join of current_directory and database_override
+    end check
+    display "Database target: " with database_path
+    store registry as scriptorium_migration_registry
+    store checked_registry as orm_migration_registry_check of registry
+    store target_position as orm_migration_target of registry and requested_target
+    check if (file exists at database_path) is equal to no:
+        check if operation_name is equal to "status" or operation_name is equal to "plan":
+            display "Database absent; no file or directory created."
+            display "Applied migrations: 0"
+            display "Planned fresh apply: " with target_position with " migrations"
+            exit program
+        end check
+        check if operation_name is equal to "down":
+            call orm_fail with "migration target" and "database does not exist; rollback has no applied history"
+        end check
+        call makedirs with (path_dirname of database_path)
+    end check
+    store session as orm_open of database_path
+    try:
+        store history_rows as orm_migration_history of session and registry
+        store has_history as orm_schema_exists of session and "_orm_migrations"
+        store legacy_version as 0
+        check if has_history is equal to no:
+            change legacy_version to scriptorium_legacy_version of session and registry
+        end check
+        check if operation_name is equal to "status" or operation_name is equal to "plan":
+            check if legacy_version is greater than 0:
+                check if target_position is less than legacy_version:
+                    call orm_fail with "migration target" and "target predates the existing legacy schema; adoption cannot downgrade it"
+                end check
+                display "Legacy adoption required: version " with legacy_version with "; managed declarations verified. No changes made."
+                display "Pending after adoption: " with (target_position minus legacy_version)
+            otherwise:
+                store planned as orm_migration_plan of session and registry and requested_target
+                call migration_cli_show with planned
+            end check
+        end check
+        check if operation_name is equal to "up":
+            check if target_position is less than legacy_version:
+                call orm_fail with "migration target" and "target predates the existing legacy schema; adoption cannot downgrade it"
+            end check
+            store adopted as scriptorium_adopt of session and registry
+            store applied_plan as orm_migrate of session and registry and requested_target
+            call migration_cli_show with applied_plan
+        end check
+        check if operation_name is equal to "down":
+            check if has_history is equal to no:
+                call orm_fail with "rollback" and "legacy schema has no applied history; inspect and explicitly adopt it with up first"
+            end check
+            store rolled_plan as nothing
+            check if requested_count is not nothing:
+                change rolled_plan to orm_rollback_count of session and registry and requested_count
+            otherwise:
+                change rolled_plan to orm_rollback_to of session and registry and requested_target
+            end check
+            call migration_cli_show with rolled_plan
+        end check
+    finally:
+        call orm_close with session
+    end try
+when error:
+    display "Migration failed: " with error_message
+    exit program with code 1
+end try

@@ -18,7 +18,7 @@ jobs:
   wfl-tests:
     name: WFL nightly (Blacksmith)
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       WFL_IMAGE: bsbyrdwfl/wfl:nightly
       TEST_CONTAINER: scriptorium-tests-${{ github.run_id }}-${{ github.run_attempt }}
@@ -36,36 +36,40 @@ jobs:
           image="$(docker image inspect --format '{{index .RepoDigests 0}}' "$WFL_IMAGE")"
           echo "image=$image" >> "$GITHUB_OUTPUT"
           version="$(docker run --rm --network none "$image" --version)"
+          runtime_revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+          [[ "$runtime_revision" =~ ^[a-f0-9]{40}$ ]] || { echo 'Official image is missing its WFL source revision'; exit 1; }
           {
             echo '### WFL nightly test environment'
             echo
             echo "- Image: $image"
             echo "- Runtime: $version"
+            echo "- WFL revision: $runtime_revision"
             echo "- Scriptorium: $(git rev-parse HEAD)"
             echo "- Scribe: $(git -C lib/scribe rev-parse HEAD)"
             echo '- Runner: blacksmith-2vcpu-ubuntu-2404 (Linux x64)'
-            echo '- Command: python3 scripts/run_tests.py --include-scribe'
-            echo '- HTTP checks: python3 -m unittest discover -s tests/integration -v'
+            echo '- Command: wfl --execution-timeout 1200 scripts/run_tests.wfl'
+            echo '- Coverage: application, ORM/migrations/recovery, HTTP integration, tooling, examples, pinned Scribe'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: Run WFL suites and HTTP configuration checks
+      - name: Run the complete WFL suite
         shell: bash
         env:
           RESOLVED_IMAGE: ${{ steps.runtime.outputs.image }}
         run: |
           # The published image is a minimal runtime with a WFL entrypoint.
-          # Install Python only in this disposable container. Scribe fixtures
-          # go to its temporary directory; the checkout stays read-only.
+          # Python is only the implementation of the repository hygiene checker.
+          # Every scenario, fixture, assertion and test driver is WFL. A writable
+          # disposable copy keeps synthetic databases/Git indexes off the checkout.
           docker run --rm --init --name "$TEST_CONTAINER" \
             --user 0:0 --entrypoint /bin/sh \
-            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/work,readonly" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/source,readonly" \
             --workdir /work "$RESOLVED_IMAGE" -ec '
               apt-get update
-              apt-get install --yes --no-install-recommends python3
+              apt-get install --yes --no-install-recommends python3 python-is-python3 git
+              cp -a /source/. /work/
               python3 --version
               wfl --version
-              python3 scripts/run_tests.py --include-scribe
-              python3 -m unittest discover -s tests/integration -v
+              wfl --execution-timeout 1200 scripts/run_tests.wfl
             '
 
       - name: Clean up test container

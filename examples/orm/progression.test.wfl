@@ -1,0 +1,68 @@
+// Run from the repository root: wfl --test examples/orm/progression.test.wfl
+include from "models.wfl"
+
+store artifact_dir as path_join of current_directory and "target" and "test-artifacts" and "orm-example"
+create directory at artifact_dir
+store database_path as path_join of artifact_dir and "example.db"
+store fixture_session as orm_open of database_path
+store conn as fixture_session.connection
+store migrations as example_registry
+try:
+    // Production and first examples both use explicit versioned migrations.
+    call orm_migrate with fixture_session and migrations and "latest"
+    describe "One API from the first record to schema evolution":
+        test "begin with a model, an explicit migration and a saved record":
+            store session as orm_borrow of conn
+            store notes as example_notes
+            store draft as orm_record of notes
+            call orm_set with draft and "title" and "My first note"
+            store saved as orm_save of session and draft
+            store found_record as orm_find_key of session and notes and (orm_get of saved and "id")
+            expect orm_get of found_record and "title" to equal "My first note"
+            expect orm_get of found_record and "urgent" to equal no
+            expect orm_get of found_record and "author_id" to equal nothing
+            expect orm_find_key of session and notes and "9223372036854775807" to equal nothing
+        end test
+
+        test "compose the same records and queries inside a transaction":
+            store session as orm_borrow of conn
+            store notes as example_notes
+            in transaction on conn:
+                store author as orm_record of (example_authors)
+                call orm_set with author and "name" and "Ada"
+                store saved_author as orm_save of session and author
+                store note as orm_record of notes
+                call orm_assign with note and [(orm_value of "title" and "Prepare release") and (orm_value of "urgent" and yes) and (orm_value of "author_id" and (orm_get of saved_author and "id"))]
+                store saved_note as orm_save of session and note
+            end transaction
+            store requested as orm_query of notes
+            call orm_where with requested and (orm_all of [(orm_compare of "urgent" and "equal" and yes) and (orm_compare of "title" and "contains" and "release")])
+            call orm_order_by with requested and "title" and "ascending"
+            call orm_page with requested and 20 and 0
+            store found_notes as orm_find of session and requested
+            expect length of found_notes to equal 1
+            store before_queries as session.query_count
+            call orm_load with session and found_notes and "author"
+            expect session.query_count minus before_queries to equal 1
+            store loaded_author as orm_related of found_notes[0] and "author"
+            expect orm_get of loaded_author and "name" to equal "Ada"
+            expect session.query_count minus before_queries to equal 1
+        end test
+
+        test "plan and reverse an index migration while preserving records":
+            store session as orm_borrow of conn
+            store before_count as orm_count of session and (orm_query of (example_notes))
+            call orm_rollback_count with session and migrations and 1
+            store planned as orm_migration_plan of session and migrations and "latest"
+            expect length of planned.pending to equal 1
+            expect orm_count of session and (orm_query of (example_notes)) to equal before_count
+            call orm_migrate with session and migrations and "latest"
+            store finished_plan as orm_migration_plan of session and migrations and "latest"
+            expect length of finished_plan.pending to equal 0
+            expect orm_count of session and (orm_query of (example_notes)) to equal before_count
+        end test
+    end describe
+finally:
+    call orm_close with fixture_session
+    delete file at database_path
+end try

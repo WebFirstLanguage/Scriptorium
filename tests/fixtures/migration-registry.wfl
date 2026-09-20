@@ -1,0 +1,78 @@
+include from "../../lib/orm/migrations.wfl"
+
+define action called migration_fixture_table with parameters title_nullable and with_index:
+    create new OrmField as key_spec:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as title_spec:
+        field_name is "title"
+        nullable is title_nullable
+    end
+    store index_specs as []
+    check if with_index:
+        create new OrmIndex as title_index:
+            index_name is "idx_items_title"
+            field_names is ["title"]
+        end
+        push with index_specs and title_index
+    end check
+    create new OrmModel as model_spec:
+        table_name is "items"
+        fields is [key_spec, title_spec]
+        indexes is index_specs
+    end
+    return orm_schema_table of model_spec
+end action
+
+define action called migration_fixture_registry with parameters source_revision:
+    store first_table as migration_fixture_table of no and no
+    store indexed_table as migration_fixture_table of no and yes
+    store nullable_table as migration_fixture_table of yes and yes
+    create new OrmMigration as first_version:
+        migration_id is "20260920000001"
+        migration_name is "Create items"
+        up_steps is [(orm_migration_create_table of first_table)]
+        irreversible_reason is "the initial table may contain records"
+        managed_after is [first_table]
+        source_text is "fixture initial source\n"
+    end
+    create new OrmMigration as second_version:
+        migration_id is "20260920000002"
+        migration_name is "Index item titles"
+        up_steps is [(orm_migration_create_index of indexed_table and indexed_table.model_spec.indexes[0])]
+        down_steps is [(orm_migration_drop_index of indexed_table and indexed_table.model_spec.indexes[0])]
+        managed_before is [first_table]
+        managed_after is [indexed_table]
+        source_text is source_revision
+    end
+    create new OrmMigration as third_version:
+        migration_id is "20260920000003"
+        migration_name is "Allow missing titles"
+        up_steps is [(orm_migration_rebuild of indexed_table and nullable_table and ["id", "title"] and ["id", "title"])]
+        down_steps is [(orm_migration_rebuild of nullable_table and indexed_table and ["id", "title"] and ["id", "title"])]
+        managed_before is [indexed_table]
+        managed_after is [nullable_table]
+        source_text is "fixture rebuild source\n"
+    end
+    return [first_version, second_version, third_version]
+end action
+
+define action called migration_fixture_path:
+    store artifact_root as path_join of current_directory and "target/test-artifacts/migrations"
+    call makedirs with artifact_root
+    store artifact_id as generate_uuid
+    return path_join of artifact_root and (artifact_id with ".db")
+end action
+
+define action called migration_fixture_remove with parameters session and database_path:
+    call orm_close with session
+    for each suffix_text in ["", "-wal", "-shm", "-journal"]:
+        store owned_path as database_path with suffix_text
+        check if file exists at owned_path:
+            delete file at owned_path
+        end check
+    end for
+end action

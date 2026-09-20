@@ -1,6 +1,6 @@
 # Scriptorium configuration (WFL runtime and application settings)
 timeout_seconds = 60
-logging_enabled = false
+execution_logging = false
 debug_report_enabled = false
 log_level = info
 

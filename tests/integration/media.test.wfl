@@ -1,0 +1,112 @@
+include from "fixtures/http-helpers.wfl"
+
+describe "HTTP media storage and rejection boundaries":
+    test "configured and legacy data paths serve synthetic uploads and delete consistently":
+        for each config_mode in ["configured", "legacy"]:
+            store site_spec as http_new_site of config_mode
+            try:
+                store running_site as http_launch of site_spec
+                try:
+                    store admin_cookie as http_install of site_spec
+                    store admin_token as http_session_token of site_spec and admin_cookie
+                    // The CMS validates extensions, not image decoding. These
+                    // bytes intentionally test that implemented contract.
+                    store uploaded as http_upload of site_spec and admin_cookie and admin_token and "../../unsafe.png" and "synthetic image payload"
+                    call http_redirect with uploaded and "/admin/media"
+                    store media_row as http_first_row of site_spec and "SELECT id, filename, original_name, content_type, size FROM media"
+                    expect media_row["filename"] contains "/" to be no
+                    expect media_row["filename"] contains "\\" to be no
+                    expect media_row["filename"] contains ".." to be no
+                    expect media_row["filename"] ends with ".png" to be yes
+                    expect media_row["filename"] is not equal to "unsafe.png" to be yes
+                    expect media_row["content_type"] to equal "image/png"
+                    expect media_row["size"] to equal 23
+                    store upload_path as path_join of site_spec["uploads"] and media_row["filename"]
+                    expect is_file of upload_path to be yes
+                    store asset_route as "/assets/uploads/" with media_row["filename"]
+                    store fetched as http_get of site_spec and asset_route and ""
+                    expect fetched["status"] to equal 200
+                    expect fetched["body"] to equal "synthetic image payload"
+                    store fetched_headers as fetched["headers"]
+                    expect fetched_headers["content-type"] to contain "image/png"
+                    store wrong_csrf as http_upload of site_spec and admin_cookie and "wrong" and "rejected.png" and "rejected"
+                    expect wrong_csrf["status"] to equal 403
+                    store missing_csrf as http_upload of site_spec and admin_cookie and "" and "rejected.png" and "rejected"
+                    expect missing_csrf["status"] to equal 403
+                    store bad_extension as http_upload of site_spec and admin_cookie and admin_token and "rejected.html" and "<script>bad</script>"
+                    expect bad_extension["status"] to equal 200
+                    expect bad_extension["body"] to contain "Only png, jpg, jpeg, gif, and webp"
+                    store empty_file as http_upload of site_spec and admin_cookie and admin_token and "empty.png" and ""
+                    expect empty_file["status"] to equal 200
+                    expect empty_file["body"] to contain "That file was empty"
+                    store malformed as http_request of site_spec and "/admin/media/upload" and "POST" and admin_cookie and "not multipart" and "multipart/form-data"
+                    expect malformed["status"] to equal 200
+                    expect malformed["body"] to contain "file upload"
+                    expect http_total of site_spec and "media" to equal 1
+                    expect length of (list_dir of site_spec["uploads"]) to equal 1
+                    store author_created as http_post of site_spec and "/admin/users" and admin_cookie and ("username=author&password=Author-pass-2026!&role=author&csrf_token=" with admin_token)
+                    call http_redirect with author_created and "/admin/users"
+                    store author_cookie as http_login of site_spec and "author" and "Author-pass-2026!"
+                    store author_token as http_session_token of site_spec and author_cookie
+                    store delete_route as "/admin/media/" with media_row["id"] with "/delete"
+                    store denied_delete as http_post of site_spec and delete_route and author_cookie and ("csrf_token=" with author_token)
+                    expect denied_delete["status"] to equal 403
+                    store get_delete as http_get of site_spec and delete_route and admin_cookie
+                    expect get_delete["status"] to equal 405
+                    expect http_total of site_spec and "media" to equal 1
+                    expect is_file of upload_path to be yes
+                    store deleted as http_post of site_spec and delete_route and admin_cookie and ("csrf_token=" with admin_token)
+                    call http_redirect with deleted and "/admin/media"
+                    expect http_total of site_spec and "media" to equal 0
+                    expect is_file of upload_path to be no
+                    store absent_asset as http_get of site_spec and asset_route and ""
+                    expect absent_asset["status"] to equal 404
+                finally:
+                    call http_stop with running_site
+                end try
+            finally:
+                call http_destroy with site_spec
+            end try
+        end for
+    end test
+
+    test "request body ceiling rejects an oversized upload before persistence":
+        // Keep the shipped 10 MiB setting covered. This disposable site uses a
+        // smaller ceiling so its real oversized body fits the transport buffer:
+        // an eager 16 MiB HTTP/1 upload can receive a reset when rejected early.
+        open file at (path_join of http_source_root and ".wflcfg") for reading as defaults_file
+        wait for store defaults_text as read content from defaults_file
+        close file defaults_file
+        expect defaults_text to contain "web_server_max_body_size = 10485760"
+        store site_spec as http_new_site of "configured"
+        try:
+            store config_path as path_join of site_spec["site"] and ".wflcfg"
+            open file at config_path for reading as config_file
+            wait for store config_text as read content from config_file
+            close file config_file
+            expect config_text to contain "web_server_max_body_size = 10485760"
+            change config_text to replace "web_server_max_body_size = 10485760" with "web_server_max_body_size = 1024" in config_text
+            call http_write with config_path and config_text
+            store running_site as http_launch of site_spec
+            try:
+                store admin_cookie as http_install of site_spec
+                store admin_token as http_session_token of site_spec and admin_cookie
+                store large_text as "x"
+                count from 1 to 11:
+                    change large_text to large_text with large_text
+                end count
+                expect length of large_text to equal 2048
+                store too_large as http_upload of site_spec and admin_cookie and admin_token and "large.png" and large_text
+                expect too_large["status"] to equal 413
+                expect http_total of site_spec and "media" to equal 0
+                expect length of (list_dir of site_spec["uploads"]) to equal 0
+                store after_rejection as http_get of site_spec and "/admin/media" and admin_cookie
+                expect after_rejection["status"] to equal 200
+            finally:
+                call http_stop with running_site
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe

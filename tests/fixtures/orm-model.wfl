@@ -1,0 +1,46 @@
+include from "../../lib/orm/writes.wfl"
+
+define action called fixture_entries_model:
+    create new OrmField as key_spec:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as slug_spec:
+        field_name is "slug"
+        unique_value is yes
+    end
+    create new OrmField as note_spec:
+        field_name is "note"
+        nullable is yes
+    end
+    create new OrmField as enabled_spec:
+        field_name is "enabled"
+        value_type is "boolean"
+        has_default is yes
+        default_value is no
+    end
+    create new OrmField as score_spec:
+        field_name is "score"
+        value_type is "integer"
+        has_default is yes
+        default_value is 7
+    end
+    create new OrmModel as entries_model:
+        table_name is "entries"
+        fields is [key_spec and slug_spec and note_spec and enabled_spec and score_spec]
+    end
+    return entries_model
+end action
+
+define action called fixture_reset_entries with parameters session:
+    call orm_sql_execute with session and "DROP TABLE IF EXISTS entries" and []
+    call orm_sql_execute with session and "CREATE TABLE entries (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, note TEXT, enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)), score INTEGER NOT NULL DEFAULT 7)" and []
+end action
+
+define action called fixture_entry with parameters session and model_spec and slug_value:
+    store draft as orm_record of model_spec
+    call orm_set with draft and "slug" and slug_value
+    return orm_save of session and draft
+end action

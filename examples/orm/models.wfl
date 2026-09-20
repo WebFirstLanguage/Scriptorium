@@ -1,0 +1,60 @@
+include from "migrations/20260920000100_author_index.wfl"
+
+// Current models can evolve; historical migration modules never call them.
+define action called example_authors:
+    create new OrmField as author_key:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as name_field:
+        field_name is "name"
+        unique_value is yes
+    end
+    create new OrmModel as authors:
+        table_name is "example_authors"
+        fields is [author_key and name_field]
+    end
+    return authors
+end action
+
+define action called example_notes:
+    create new OrmField as note_key:
+        field_name is "id"
+        value_type is "identity"
+        primary_key is yes
+        generated is yes
+    end
+    create new OrmField as title_field:
+        field_name is "title"
+    end
+    create new OrmField as owner_field:
+        field_name is "author_id"
+        value_type is "identity"
+        nullable is yes
+    end
+    create new OrmField as urgent_field:
+        field_name is "urgent"
+        value_type is "boolean"
+        has_default is yes
+        default_value is no
+    end
+    create new OrmIndex as owner_index:
+        index_name is "example_notes_author"
+        field_names is ["author_id"]
+    end
+    create new OrmModel as notes:
+        table_name is "example_notes"
+        fields is [note_key and title_field and owner_field and urgent_field]
+        indexes is [owner_index]
+    end
+    create new OrmRelationship as author_relation:
+        relation_name is "author"
+        local_field is "author_id"
+        related_model is example_authors
+        related_field is "id"
+    end
+    notes.relate(author_relation)
+    return notes
+end action

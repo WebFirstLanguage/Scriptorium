@@ -1,0 +1,92 @@
+name: WFL ORM capability gates
+
+on:
+  push:
+    branches: [codex/wfl-orm-migrations]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orm-capabilities-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: Resolve current nightly
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.runtime.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Pull nightly and record provenance
+        id: runtime
+        shell: bash
+        run: |
+          docker pull bsbyrdwfl/wfl:nightly
+          image="$(docker image inspect --format '{{index .RepoDigests 0}}' bsbyrdwfl/wfl:nightly)"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          version="$(docker run --rm --network none "$image" --version)"
+          {
+            echo '### ORM prerequisite evidence (not completed ORM validation)'
+            echo "- Image: $image"
+            echo "- Runtime: $version"
+            echo "- Scriptorium: $(git rev-parse HEAD)"
+            echo "- Scribe: $(git -C lib/scribe rev-parse HEAD)"
+            echo '- Every probe, fixture, HTTP driver and assertion is WFL.'
+            echo '- Unmet capability assertions fail their jobs without suppression.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  probes:
+    name: ${{ matrix.suite }}
+    needs: runtime
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: orm-native-baseline
+            path: tests/runtime/orm-native-baseline.test.wfl
+          - suite: transaction-validation-capability
+            path: tests/runtime/transaction-validation-capability.test.wfl
+          - suite: rebuild-foreign-keys-capability
+            path: tests/runtime/rebuild-foreign-keys-capability.test.wfl
+          - suite: process-capabilities
+            path: tests/runtime/process-capabilities.test.wfl
+          - suite: http-redirect-capability
+            path: tests/runtime/http-redirect-capability.test.wfl
+          - suite: media-body-limit
+            path: tests/integration/media.test.wfl
+    env:
+      RESOLVED_IMAGE: ${{ needs.runtime.outputs.image }}
+      PROBE_SUITE: ${{ matrix.path }}
+      TEST_CONTAINER: scriptorium-probe-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Invoke WFL capability suite
+        shell: bash
+        run: |
+          docker pull "$RESOLVED_IMAGE"
+          docker run --rm --init --name "$TEST_CONTAINER" \
+            --user 0:0 --entrypoint /bin/sh \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/source,readonly" \
+            --env PROBE_SUITE --workdir /work "$RESOLVED_IMAGE" -ec '
+              cp -a /source/. /work/
+              exec wfl --test "$PROBE_SUITE"
+            '
+      - name: Clean up disposable container
+        if: always()
+        shell: bash
+        run: |
+          if docker container inspect "$TEST_CONTAINER" >/dev/null 2>&1; then
+            docker container rm --force "$TEST_CONTAINER"
+          fi

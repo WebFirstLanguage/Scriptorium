@@ -1,0 +1,6 @@
+# Suites include file-backed ORM, migration and recovery workflows.
+# This bounds the whole suite; tests for locks/process/HTTP deadlines assert
+# their own shorter limits. The WFL runner also owns a hard child timeout.
+timeout_seconds = 180
+execution_logging = false
+debug_report_enabled = false
