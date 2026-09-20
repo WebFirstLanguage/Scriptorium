@@ -49,7 +49,12 @@ engine, and is styled with the **WFL Design System** (dark, teal-on-Ink).
 
 ## Quick start
 
-You need the WFL interpreter (`wfl`) on your PATH. Scriptorium keeps the
+You need the WFL interpreter (`wfl`) on your PATH. The verified official runtime
+is nightly **26.9.14** from source `8d82d785` (or a newer runtime retaining its
+application-error, schema-transaction, HTTP and owned-process capabilities).
+Official 26.9.12 lacks those prerequisites. See the
+[runtime verification record](docs/orm-verification.md) for immutable provenance.
+Scriptorium keeps the
 [Scribe](https://github.com/WebFirstLanguage/Scribe) template engine as a git
 submodule, so clone with submodules:
 

@@ -69,6 +69,13 @@ and Git are needed to exercise the existing hygiene checker; every test
 scenario, fixture, assertion, helper and driver is WFL. Run individual suites from the
 Scriptorium root so relative includes, templates, and assets resolve correctly.
 
+The ORM and complete runner additionally require application errors, pinned
+schema transactions, HTTP redirect/header controls and owned process completion.
+Official nightly 26.9.14 at `8d82d785` contains the verified prerequisites;
+official 26.9.12 does not. Record source revision as well as the version:
+[the verification record](docs/orm-verification.md) identifies the published
+artifacts and final CI evidence.
+
 WFL 26.9.3 on Windows is the local adoption baseline: the five application
 suites passed there on 2026-09-12. This is a recorded observation, not a complete
 supported-platform matrix or a minimum-version promise. Record `wfl --version`,

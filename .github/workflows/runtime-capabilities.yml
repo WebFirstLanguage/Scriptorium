@@ -50,15 +50,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite:
-          - orm-native-baseline
-          - transaction-validation-capability
-          - rebuild-foreign-keys-capability
-          - process-capabilities
-          - http-redirect-capability
+        include:
+          - suite: orm-native-baseline
+            path: tests/runtime/orm-native-baseline.test.wfl
+          - suite: transaction-validation-capability
+            path: tests/runtime/transaction-validation-capability.test.wfl
+          - suite: rebuild-foreign-keys-capability
+            path: tests/runtime/rebuild-foreign-keys-capability.test.wfl
+          - suite: process-capabilities
+            path: tests/runtime/process-capabilities.test.wfl
+          - suite: http-redirect-capability
+            path: tests/runtime/http-redirect-capability.test.wfl
+          - suite: media-body-limit
+            path: tests/integration/media.test.wfl
     env:
       RESOLVED_IMAGE: ${{ needs.runtime.outputs.image }}
-      PROBE_SUITE: tests/runtime/${{ matrix.suite }}.test.wfl
+      PROBE_SUITE: ${{ matrix.path }}
       TEST_CONTAINER: scriptorium-probe-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
     steps:
       - uses: actions/checkout@v4

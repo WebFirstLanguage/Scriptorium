@@ -9,10 +9,11 @@ change.
 
 This implementation requires WFL's `raise_error` and
 `in transaction on connection for schema changes` capabilities. Official
-26.9.12 predates those prerequisites. See [runtime capabilities](runtime-capabilities.md)
-and [runtime review](runtime-review.md) for the audited runtime and upstream
-evidence; do not substitute an older installed executable merely because it
-can parse ordinary transactions.
+26.9.12 predates those prerequisites; official nightly 26.9.14 at source
+`8d82d785` contains them. See [runtime verification](orm-verification.md) for
+immutable publication provenance and [runtime review](runtime-review.md) for
+the upstream safety evidence. An older installed executable that parses
+ordinary transactions is insufficient.
 
 ## Commands and target selection
 

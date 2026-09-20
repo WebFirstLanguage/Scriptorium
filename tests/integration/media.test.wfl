@@ -71,20 +71,37 @@ describe "HTTP media storage and rejection boundaries":
     end test
 
     test "request body ceiling rejects an oversized upload before persistence":
+        // Keep the shipped 10 MiB setting covered. This disposable site uses a
+        // smaller ceiling so its real oversized body fits the transport buffer:
+        // an eager 16 MiB HTTP/1 upload can receive a reset when rejected early.
+        open file at (path_join of http_source_root and ".wflcfg") for reading as defaults_file
+        wait for store defaults_text as read content from defaults_file
+        close file defaults_file
+        expect defaults_text to contain "web_server_max_body_size = 10485760"
         store site_spec as http_new_site of "configured"
         try:
+            store config_path as path_join of site_spec["site"] and ".wflcfg"
+            open file at config_path for reading as config_file
+            wait for store config_text as read content from config_file
+            close file config_file
+            expect config_text to contain "web_server_max_body_size = 10485760"
+            change config_text to replace "web_server_max_body_size = 10485760" with "web_server_max_body_size = 1024" in config_text
+            call http_write with config_path and config_text
             store running_site as http_launch of site_spec
             try:
                 store admin_cookie as http_install of site_spec
                 store admin_token as http_session_token of site_spec and admin_cookie
                 store large_text as "x"
-                count from 1 to 24:
+                count from 1 to 11:
                     change large_text to large_text with large_text
                 end count
+                expect length of large_text to equal 2048
                 store too_large as http_upload of site_spec and admin_cookie and admin_token and "large.png" and large_text
                 expect too_large["status"] to equal 413
                 expect http_total of site_spec and "media" to equal 0
                 expect length of (list_dir of site_spec["uploads"]) to equal 0
+                store after_rejection as http_get of site_spec and "/admin/media" and admin_cookie
+                expect after_rejection["status"] to equal 200
             finally:
                 call http_stop with running_site
             end try

@@ -87,6 +87,28 @@ runtime, `scripts/run_tests.wfl --group application` reports 24 suites,
 log is `target/ci-propagation-red-local.log`. Its remote assertion-failure proof
 and removal are still required; the full suite temporarily contains 42 suites.
 
+The first full run on the published 26.9.14 image,
+[35507634634](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35507634634),
+tested PR head `07e8adcb7785c168c37fd56cc35e88492809a820` through merge checkout
+`86185103700e28cd12ba9379f00adebdd056dfbd`. It reported **32 passed, 10 failed**,
+exit 1: the intentional assertion, an oversized-upload transport failure, and
+eight failures after the runner reached the runtime's 300-second whole-command
+budget. This is not isolated failure-propagation proof. All five standalone
+[runtime capability gates](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35507632213)
+passed. Both [Governance platforms](https://github.com/WebFirstLanguage/Scriptorium/actions/runs/35507634656)
+passed hygiene 28, migration CLI 4 and runner 9 cases (three suites), followed
+by repository hygiene with 180 paths including the deliberate test.
+
+The same published Windows runtime completed **42 suites: 41 passed, one
+intentional failure**, exit 1, in approximately 160 seconds. Its executable
+SHA256 is `da109d5926f6af4a2f24c45150140764c406c055aef2dd7e43e45b85278f1dfe`;
+the log is `target/full-official-windows-red.log`. Independent timing comparison
+found migration CLI tests took 35.1 seconds on native Linux, 36.1 in Docker and
+12.6 on Windows. No connection leak or fixed delay was found. The longer full
+Linux run needs an explicit finite invocation budget while retaining child
+deadlines. The media fixture's portable rejection boundary is being corrected
+without accepting transport errors as HTTP responses.
+
 - Push an actual intentionally failing WFL test, observe the new runner and
   its Blacksmith CI job fail, then remove it and verify a clean run.
 - Inspect all required checks on the final proposed Scriptorium revision.
