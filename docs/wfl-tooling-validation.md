@@ -44,8 +44,8 @@ upstream WFL test-first commit `012e7c89` also failed its intended assertion.
 The runtime remedy drains both bounded streams after termination and includes
 their contents in the same typed timeout error, with a separate one-second
 drain limit. The strengthened Scriptorium runner suite then returned **9/9**.
-Independent source review accepted that remedy; it still needs the final
-combined runtime and remote acceptance checks below.
+Independent source review accepted that remedy. The final combined-runtime
+result is recorded below; published-runtime acceptance is tracked separately.
 
 The complete command includes all groups and pinned Scribe by default. Use
 `--group` for an explicitly focused run. The default executable is the exact

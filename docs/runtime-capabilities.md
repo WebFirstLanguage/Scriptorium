@@ -1,8 +1,9 @@
 # ORM and migration runtime capability audit
 
-This is an evidence record, not an ORM implementation or a readiness claim.
-The requested production ORM and migration work has unresolved runtime
-requirements. All executable probes in this record are WFL.
+This historical audit records the runtime gaps found before implementing the
+ORM and its upstream prerequisites. All executable probes are WFL. See
+[the verification record](orm-verification.md) for the implemented remedies,
+merged upstream revisions and final acceptance status.
 
 ## Provenance and commands
 

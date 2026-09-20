@@ -6,15 +6,24 @@ tests does not establish that the published nightly supports this change.
 
 ## Runtime prerequisites
 
-All three separate upstream changes have independent technical review and
-successful exact-head remote CI. They remain prerequisites until merged and
-included in an official nightly publication.
+All three separate upstream changes have independent technical review,
+successful exact-head remote CI and approved merges. Official nightly
+[35506079498](https://github.com/WebFirstLanguage/wfl/actions/runs/35506079498)
+is building their combined source `8d82d785ea59300834de1c48b04a7ba0e187a1cd`,
+version `26.9.14`; publication is not yet claimed complete.
 
 | Upstream PR | Tested head | Remote CI |
 | --- | --- | --- |
 | [HTTP redirect and repeated-header controls #737](https://github.com/WebFirstLanguage/wfl/pull/737) | `b8e5e8768a13c44aa033a3cd732b85f089262eff` | [35500755237](https://github.com/WebFirstLanguage/wfl/actions/runs/35500755237), Linux 169 and Windows 168 WFL programs passed |
-| [Owned process lifecycle and diagnostics #738](https://github.com/WebFirstLanguage/wfl/pull/738) | `96aa48cb122f48c68e8e937dc4ac44cbe283f77f` | [35503440343](https://github.com/WebFirstLanguage/wfl/actions/runs/35503440343), Linux 173 and Windows 172 WFL programs passed |
-| [Application errors and pinned schema transactions #739](https://github.com/WebFirstLanguage/wfl/pull/739) | `9defb44208fd3fdc10c3758b3dc1f3cc56706251` | [35502181204](https://github.com/WebFirstLanguage/wfl/actions/runs/35502181204), Linux 175 and Windows 174 WFL programs passed |
+| [Owned process lifecycle and diagnostics #738](https://github.com/WebFirstLanguage/wfl/pull/738) | `f54243f43769b8d6e8ebe0b8f54ed2b2a735b234` | [35505056152](https://github.com/WebFirstLanguage/wfl/actions/runs/35505056152), Linux 174 and Windows 173 WFL programs passed |
+| [Application errors and pinned schema transactions #739](https://github.com/WebFirstLanguage/wfl/pull/739) | `59709aed97d045dbd9a04093fff5c32ae60a95e3` | [35505568741](https://github.com/WebFirstLanguage/wfl/actions/runs/35505568741), Linux 181 and Windows 180 WFL programs passed |
+
+The merge commits are `eecd658c32e23abdb6f4e0cc881d8af26dacd2d2` (#737),
+`d6993e77578892e0a93d3b8c8b08d6b1b55eede8` (#738), and
+`8d82d785ea59300834de1c48b04a7ba0e187a1cd` (#739). The final schema PR's
+combined Linux/Windows integration gates each passed 157 programs, 36
+documentation checks and three web checks. Its Rust gate passed 2429 tests
+with 27 existing ignored tests.
 
 The listed WFL gates had zero failures and zero timeouts. Existing platform
 skips remain recorded by upstream CI; these counts do not claim every upstream
@@ -39,8 +48,8 @@ The ignored local log is `target/full-candidate-final.log`. The earlier complete
 
 `python scripts/check_repo_hygiene.py` passed with 179 candidate paths; Git
 reported a clean worktree and `git diff --check` passed. The source audit found
-no active Python test implementation or driver. The only non-WFL files under
-tracked tests/scripts are the hygiene checker implementation and the existing
+no active Python test implementation or driver. The only non-WFL executable code
+under tracked tests/scripts is the hygiene checker implementation and the existing
 Scribe update utility.
 
 The hygiene checker fixtures create disposable Git repositories and need child
@@ -55,6 +64,13 @@ reproduced analyzer limitations from intentional unknown-type safety checks.
 This record does not claim a clean static-analysis gate.
 
 ## Outstanding remote acceptance
+
+Commit `b9e7903286495d6665b7cfdbd8916a4dc5abd952` adds a temporary WFL assertion
+with marker `SCRIPTORIUM_INTENTIONAL_CI_FAILURE_PROOF`. On the combined local
+runtime, `scripts/run_tests.wfl --group application` reports 24 suites,
+23 passed, one failed, exit 1; only that deliberate suite fails. The retained
+log is `target/ci-propagation-red-local.log`. Its remote assertion-failure proof
+and removal are still required; the full suite temporarily contains 42 suites.
 
 - Publish the reviewed upstream changes through the official nightly workflow.
 - Push an actual intentionally failing WFL test, observe the new runner and

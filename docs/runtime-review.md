@@ -1,5 +1,9 @@
 # Independent runtime prerequisite review
 
+This historical review covers the initial runtime gaps and subsequent source
+remedies. [The verification record](orm-verification.md) tracks their merges,
+official publication and final application acceptance.
+
 Reviewed 2026-09-20 by a separate agent that did not author the capability
 inventory or proposed ORM. This is technical review, not Maintainer approval
 and not review of an implemented ORM. No ORM implementation exists in the

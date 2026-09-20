@@ -1,8 +1,8 @@
 # ORM and versioned migrations
 
-Status: implemented architecture with verification and independent review in
-progress, 2026-09-20. The library and application integration are implemented;
-final recovery checks and remote evidence remain required before release.
+Status: implemented architecture with independent technical review and local
+recovery verification, 2026-09-20. [The verification record](orm-verification.md)
+tracks official runtime publication and final remote acceptance.
 The actual API is documented in [orm.md](orm.md); administrative operations are
 documented in [migrations.md](migrations.md).
 

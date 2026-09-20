@@ -38,8 +38,8 @@ removing its neighbors.
 Expected remedies are confined to ordinary SQLite tables: retain physical row
 identity for bounded mutation, preserve compatibility equality semantics in the
 application wrappers, and return actual operation/connection metadata through
-the ORM rather than synthesizing it. Final source review and Green results are
-pending the owner's implementation.
+the ORM rather than synthesizing it. The Green and remedy review below records
+the implemented fixes and their successful regression results.
 
 ## Reviewed areas without findings
 

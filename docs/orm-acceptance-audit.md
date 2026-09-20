@@ -39,12 +39,12 @@ and final revision provenance remain pending.
 | Every test, fixture, helper and driver is WFL | Python runner, two Python tooling suites and Python port suite removed; WFL 8+28 behavior mapping plus strengthened diagnostics and default-discovery cases |
 | Non-test Python checker remains only as a subject | `scripts/check_repo_hygiene.py` is invoked by WFL hygiene assertions and the existing governance utility step |
 | Complete suite includes pinned Scribe | `wfl scripts/run_tests.wfl` discovers application, tooling, integration, runtime probes, examples and an isolated copy of pinned Scribe |
-| Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; final deliberate failing CI commit is still required |
+| Timeout/failure cleanup and failure propagation | Owned child lifecycle, joined bounded output, nonzero exit and descendant markers in WFL tooling suites; deliberate commit `b9e7903` produces local 23-pass/one-fail exit 1; remote assertion-failure proof and removal remain required |
 | Keep Linux/Windows governance and Blacksmith nightly | Updated Governance provisions current nightly assets on both platforms; WFL job freshly resolves/pins Docker digest and records runtime/source revisions |
 | Independent review and repaired findings | `orm-independent-review.md`, `independent-migration-review.md`, `runtime-review.md`, migration safety regressions and HTTP evidence distinguish source review from Maintainer approval; `type-analysis-review.md` records remaining runtime static-analysis diagnostics honestly |
 | Final ready-to-merge five-section PR | Source frozen, complete local pass and hygiene recorded; pending deliberate CI Red/Green, fresh nightly provenance and exact-head remote inspection |
 
-The upstream runtime fixes require a published nightly before final Scriptorium
-acceptance. The user authorized upstream implementation and separate PRs;
-upstream merge/publication permission was requested separately. Scriptorium
-merging and production deployment are outside this deliverable.
+The user approved upstream merges and official nightly publication. All three
+prerequisite PRs are merged; publication must complete before final Scriptorium
+acceptance. Scriptorium merging and production deployment remain outside this
+deliverable.

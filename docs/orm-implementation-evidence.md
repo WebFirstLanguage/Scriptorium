@@ -1,9 +1,9 @@
 # ORM implementation evidence
 
-This is an incremental engineering record, not a completion or release claim.
-Application integration and the WFL-only runner conversion are implemented.
-Migration recovery expansion, review fixes and final Scriptorium CI remain in
-progress; this record is not a completion claim.
+This records implementation and local regression evidence. Application
+integration, migration recovery, review fixes and the WFL-only runner are
+implemented. [The verification record](orm-verification.md) tracks official
+runtime publication and final Scriptorium CI separately.
 
 ## Implemented library contracts
 

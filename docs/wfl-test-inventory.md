@@ -176,7 +176,8 @@ repair Scribe's relative `build/` or the app's cwd-based configuration/data
 resolution. Shell wrappers would also change which process WFL owns and kills
 on Windows. Neither is an accepted replacement for the missing primitive.
 
-Portable, deliberately failing capability gates live under `tests/runtime/`:
+The original `a81ecf9` capability gates under `tests/runtime/` deliberately
+exposed missing runtime behavior:
 
 ```sh
 wfl --test tests/runtime/process-capabilities.test.wfl
@@ -188,9 +189,11 @@ stderr preservation, and error-path cleanup. On Windows 26.9.12 it reports
 **1 passed / 3 failed, exit 1**; error-path cleanup passes. The HTTP gate reports
 **0 passed / 1 failed, exit 1**, specifically `Expected 200 to equal 302`.
 The HTTP probe requires free loopback port 41868 and checks occupancy before
-starting its own server. These are pending upstream capability requirements,
-not application defects or replacements for the existing suites. Do not add
-them as green required application checks or suppress their failures.
+starting its own server. These are historical upstream capability failures,
+not application defects or replacements for the existing suites. The reviewed
+upstream remedies make the current capability suites pass on the combined
+candidate, and the complete runner now includes them by default. See
+[the verification record](orm-verification.md) for published-runtime results.
 
 Relevant runtime source locations: `src/parser/stmt/processes.rs` (launch
 grammar), `src/interpreter/mod.rs` (`spawn_process`, `read_process_output`,

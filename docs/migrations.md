@@ -287,8 +287,10 @@ to make older code start.
    and restore its matching code, runtime and configuration. Remove the failed
    working data from the restore destination first so stale files cannot mix
    with the backup. For the legacy layout, replace the database and sidecars
-   together with `static/uploads`. Recheck status, integrity, foreign keys and
-   the HTTP workflows before reopening traffic.
+   together with `static/uploads`. For a versioned release, recheck migration
+   status, integrity, foreign keys and HTTP workflows before reopening traffic.
+   A restored pre-ORM release has no migration CLI: use that release's database
+   integrity and application verification procedure with its matching runtime.
 
 The WFL suites exercise real file-backed databases, all supported legacy states,
 edited/missing history, drift and unsafe copy maps, rollback/reapply, whole-range
