@@ -256,8 +256,8 @@ keyboard behavior, or data integrity.
 checks on Blacksmith Linux and GitHub-hosted Windows.
 [WFL tests](.github/workflows/wfl-tests.yml) runs the complete WFL suite via
 `wfl --execution-timeout 1200 scripts/run_tests.wfl` on
-`blacksmith-2vcpu-ubuntu-2404`. Both workflows run for pushes and pull requests to
-`main` and support manual dispatch.
+`blacksmith-2vcpu-ubuntu-2404`. Both workflows run for pushes to `main`, pull requests to `main` and `dev`,
+and manual dispatch.
 
 WFL tests pulls `bsbyrdwfl/wfl:nightly` from Docker Hub for every run, resolves
 the image digest, and uses that immutable image for that run's runtime checks.
