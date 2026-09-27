@@ -1,5 +1,10 @@
 # Contributing to Scriptorium
 
+Contribution authority, feature → `dev` PRs, exact-commit CI, Yomi review,
+bot feedback, secrets and production boundaries follow
+[GOVERNANCE.md](GOVERNANCE.md#common-contribution-policy--version-10-2026-09-27).
+
+
 Scriptorium welcomes fixes, tests, documentation, themes, accessibility work,
 and improvements to the CMS. You can contribute through a fork and pull request
 without a formal project role. AI-assisted contributions are welcome; the author
@@ -46,7 +51,7 @@ pinned Scribe submodule:
 ```sh
 git clone --recurse-submodules https://github.com/YOUR-USERNAME/Scriptorium.git
 cd Scriptorium
-git switch -c fix/describe-the-change
+git switch -c fix/describe-the-change origin/dev
 ```
 
 For an existing clone, use `git submodule update --init --recursive`. Read
@@ -145,7 +150,7 @@ Use [.github/pull_request_template.md](.github/pull_request_template.md) as the
 canonical body format for every PR, including those created through a CLI,
 API, agent, or dependency updater. Copy it explicitly when your tool does not
 load it. Template completion is a review requirement; it does not replace tests
-or Maintainer approval.
+or the review and merge authority gates in GOVERNANCE.md.
 
 Titles use `<type>(<optional scope>): <imperative summary>`, for example
 `fix(auth): reject expired sessions` or `docs: clarify theme fallback`.

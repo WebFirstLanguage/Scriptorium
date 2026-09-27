@@ -1,0 +1,20 @@
+// Keep dev PR coverage while preserving the main-only push boundary.
+include from "../../scripts/test_support.wfl"
+
+store repo_root as path_dirname of (path_dirname of script_directory)
+
+describe "Governance rollout CI targets":
+    test "both workflows admit dev PRs without broadening push events":
+        for each workflow_name in ["governance.yml", "wfl-tests.yml"]:
+            store workflow_path as path_join of repo_root and ".github/workflows" and workflow_name
+            store raw_workflow as test_read_text of workflow_path
+            // Windows checkout uses CRLF; event semantics do not depend on EOL.
+            store workflow_text as ""
+            for each text_fragment in (split raw_workflow by "\r"):
+                change workflow_text to workflow_text with text_fragment
+            end for
+            expect workflow_text to contain "  pull_request:\n    branches: [main, dev]"
+            expect workflow_text to contain "  push:\n    branches: [main]\n"
+        end for
+    end test
+end describe

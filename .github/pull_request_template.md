@@ -52,3 +52,16 @@ Follow [CONTRIBUTING.md](https://github.com/WebFirstLanguage/Scriptorium/blob/ma
 [REPOSITORY_HYGIENE.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/REPOSITORY_HYGIENE.md).
 
 Report undisclosed vulnerabilities privately using [SECURITY.md](https://github.com/WebFirstLanguage/Scriptorium/blob/main/SECURITY.md).
+
+### Governance evidence
+
+- [ ] Feature/fix/docs branch targets `dev`; no direct protected-branch push.
+- [ ] Current SHA, Actions run links and individual required results are recorded.
+- [ ] Red/Green evidence, or justified documentation-only N/A with doc/link checks.
+- [ ] Skipped, missing, pending and failed checks are explicit, never called passes.
+- [ ] Yomi reviewed this revision; material fixes have fresh CI and review.
+- [ ] Triggered bot reviews finished; findings/discussions are fixed or dispositioned.
+- [ ] PR owner has a real monitor/event continuation while checks or reviews are pending.
+- [ ] No secrets/private data; environment injection and production boundaries observed.
+- [ ] No protection bypass; check/review state is rechecked immediately before merge.
+- [ ] Main/release/tag/deploy authority and Brad-reserved decisions follow GOVERNANCE.md.

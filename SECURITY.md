@@ -1,5 +1,10 @@
 # Scriptorium Security Policy
 
+Contribution authority, feature → `dev` PRs, exact-commit CI, Yomi review,
+bot feedback, secrets and production boundaries follow
+[GOVERNANCE.md](GOVERNANCE.md#common-contribution-policy--version-10-2026-09-27).
+
+
 ## Development and support scope
 
 Scriptorium is an MVP under active development. Security fixes target the

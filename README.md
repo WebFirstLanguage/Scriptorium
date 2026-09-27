@@ -334,3 +334,9 @@ layout remains grandfathered under [docs/PROJECT-LAYOUT.md](docs/PROJECT-LAYOUT.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Contribution policy
+
+Read [GOVERNANCE.md](GOVERNANCE.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Work on feature branches and open PRs into `dev`; current-revision CI and
+Yomi review are required.
