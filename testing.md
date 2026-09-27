@@ -1,5 +1,10 @@
 # Scriptorium testing policy and project profile
 
+Contribution authority, feature → `dev` PRs, exact-commit CI, Yomi review,
+bot feedback, secrets and production boundaries follow
+[GOVERNANCE.md](GOVERNANCE.md#common-contribution-policy--version-10-2026-09-27).
+
+
 This is Scriptorium's binding testing policy, adapted from WFL's testing
 governance to this WFL application. It defines both required evidence and the
 limits of the tooling that exists today. It does not claim that the repository
@@ -57,7 +62,8 @@ Use the highest applicable class and have the reviewer check the assessment.
 
 Independence means the reviewer did not author the implementation and inspects
 the actual diff and evidence. An independent review agent can provide technical
-review, but project acceptance and merge authority remain with the Maintainer.
+review; project acceptance and merge authority follow GOVERNANCE.md’s
+dev delegation and conditional CEO gate.
 Missing automation does not exempt new or changed behavior from these rules.
 
 ## Runtime and environment
@@ -296,7 +302,7 @@ do not activate host settings. Bot PRs follow the same review and test rules;
 approve pending workflow runs or manually dispatch both Governance and WFL tests
 on the proposed branch and verify that their revisions match the proposal.
 
-Before a production release, the Maintainer MUST identify the immutable
+Before a production release, the authorized actor under GOVERNANCE.md MUST identify the immutable
 Scriptorium and Scribe revisions, runtime version, deployed configuration, and
 candidate artifact if packaged. Run the application suites and real critical
 journeys for that candidate, including installation, upgrade, data recovery,
@@ -332,7 +338,7 @@ compliance. Update this register when tooling or host settings are verified.
 
 ## Exceptions and completion
 
-The Maintainer may approve a narrow temporary exception for unavailable
+Brad may approve a narrow temporary exception for unavailable
 evidence or an emergency mitigation. Record the exact rule, revision, reason,
 approver, compensating checks, recovery plan, expiry, and an owned repair issue
 with a deadline. An author cannot be the only reviewer of their exception.

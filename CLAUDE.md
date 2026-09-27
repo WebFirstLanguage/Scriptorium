@@ -1,5 +1,10 @@
 # Scriptorium — shared agent instructions
 
+Contribution authority, feature → `dev` PRs, exact-commit CI, Yomi review,
+bot feedback, secrets and production boundaries follow
+[GOVERNANCE.md](GOVERNANCE.md#common-contribution-policy--version-10-2026-09-27).
+
+
 Scriptorium is a WordPress-style CMS written entirely in **WFL**, rendering
 through the **Scribe** template engine (a git submodule at `lib/scribe`) and
 persisting to SQLite. Start with [`README.md`](README.md), then
@@ -24,7 +29,8 @@ Protect existing databases, uploads, URLs, theme contracts, and extension
 hooks. Behavioral changes need failing-then-passing test evidence and updated
 docs in the same change. Documentation-only changes need relevant validation,
 not artificial application tests. Do not log or commit secrets or real site
-data. Maintainers own merges, releases, access grants, and policy exceptions;
+data. Merge/release authority follows GOVERNANCE.md’s dev delegation and
+conditional CEO gate; access grants and exceptions remain explicitly governed.
 AI assistance does not change that authority or the quality bar.
 
 `AGENTS.md` points here so agent guidance has one canonical home. Keep this
@@ -119,7 +125,8 @@ violate the standard.
 ## Deployed instances
 
 Live Scriptorium sites (news.starnet and others) are Starnet infrastructure.
-Follow the workspace instructions in the `starnet` folder for those: load the
+Agents may inspect authorized config/logs only; production changes require
+the authority recorded in GOVERNANCE.md. For authorized inspection, load the
 `starnet-devops` and `knowledge-mcp-dev` skills, check the knowledge base before
 acting, and record what changed afterward. Use `git-safe-commit` for any git
 write operation.

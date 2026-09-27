@@ -1,5 +1,10 @@
 # Scriptorium AI Policy
 
+Contribution authority, feature → `dev` PRs, exact-commit CI, Yomi review,
+bot feedback, secrets and production boundaries follow
+[GOVERNANCE.md](GOVERNANCE.md#common-contribution-policy--version-10-2026-09-27).
+
+
 ## AI-assisted contributions are welcome
 
 Generative AI, coding agents, and other automation are legitimate tools for
@@ -56,7 +61,8 @@ Agents must follow [CLAUDE.md](CLAUDE.md) and the root policies. A tool's abilit
 to change files, deploy a site, merge a PR, or publish a release does not grant
 authority to do so. Maintainers remain accountable for project decisions and
 must authorize any delegation for merges, releases, access, or infrastructure.
-AI-generated approval does not substitute for required Maintainer approval.
+A bot summary does not substitute for Yomi’s independent review or the
+conditional CEO/Brad decisions required by GOVERNANCE.md.
 
 ## Changes to this policy
 
