@@ -1,0 +1,39 @@
+include from "fixtures/http-helpers.wfl"
+
+// Implicit label: the Status text and status select share one label element.
+define action called editor_inline_label with parameters html_text:
+    store open_marker as "<label class=\"field field--inline\">"
+    store open_at as indexof of html_text and open_marker
+    expect open_at is greater than or equal to 0 to be yes
+    store label_tail as substring of html_text and open_at and ((length of html_text) minus open_at)
+    store close_at as indexof of label_tail and "</label>"
+    expect close_at is greater than 0 to be yes
+    return substring of label_tail and 0 and close_at
+end action
+
+describe "Editor status labels through HTTP":
+    test "new page and post status selects sit inside the Status label":
+        store site_spec as http_new_site of "configured"
+        try:
+            store running_site as http_launch of site_spec
+            try:
+                store admin_cookie as http_install of site_spec
+                for each editor_route in ["/admin/pages/new", "/admin/posts/new"]:
+                    store editor_reply as http_get of site_spec and editor_route and admin_cookie
+                    expect editor_reply["status"] to equal 200
+                    store label_html as editor_inline_label of editor_reply["body"]
+                    expect label_html to contain "<span>Status</span>"
+                    expect label_html to contain "<select name=\"status\">"
+                    expect label_html to contain "value=\"draft\""
+                    expect label_html to contain "value=\"published\""
+                    expect label_html contains "<select name=\"role\">" to be no
+                    expect label_html contains "type=\"file\"" to be no
+                end for
+            finally:
+                call http_stop with running_site
+            end try
+        finally:
+            call http_destroy with site_spec
+        end try
+    end test
+end describe
