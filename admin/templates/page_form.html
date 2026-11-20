@@ -16,13 +16,13 @@
     <span>Body <em class="hint">Markdown</em></span>
     <textarea name="body_markdown" rows="18">{{ page.body_markdown }}</textarea>
   </label>
-  <div class="field field--inline">
+  <label class="field field--inline">
     <span>Status</span>
     <select name="status">
       <option value="draft"{% if page.status == 'draft' %} selected{% endif %}>Draft</option>
       <option value="published"{% if page.status == 'published' %} selected{% endif %}>Published</option>
     </select>
-  </div>
+  </label>
   <div class="form__actions">
     <button class="btn btn--primary" type="submit">Save page</button>
     <a class="btn btn--ghost" href="/admin/pages">Cancel</a>

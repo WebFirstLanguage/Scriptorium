@@ -7,6 +7,7 @@ program argument, for example:
 wfl --test tests/integration/server-port.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/authentication.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/content-users.test.wfl /absolute/path/to/wfl
+wfl --test tests/integration/editor-labels.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/media.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/throttle.test.wfl /absolute/path/to/wfl
 wfl --test tests/integration/recovery.test.wfl /absolute/path/to/wfl
@@ -46,6 +47,7 @@ all response-header values. Tests manage synthetic cookies explicitly.
 | `server-port.test.wfl` | Original Python cases: configured ephemeral port, missing setting, absent config; exact startup URLs, installer status/content type/form/CSRF. |
 | `authentication.test.wfl` | Installer CSRF and input rejection without mutation, first admin/session creation, setup locking, login response cookie flags, invalid credentials, CSRF, logout methods, and expired sessions. |
 | `content-users.test.wfl` | Draft/publication, escaped title and rendered Markdown, pagination, page navigation/update/delete, mutation methods, CSRF, author ownership, admin user/settings boundaries, password update, account removal and revoked access. |
+| `editor-labels.test.wfl` | New page and post forms: the Status text and `select name="status"` share one `label.field.field--inline`. A second program argument selects an older application tree for the red run. |
 | `media.test.wfl` | Configured and legacy storage, generated safe names, byte retrieval, missing/wrong CSRF, extension/empty/malformed/oversized rejection, author denial, method enforcement, database/file consistency on deletion. |
 | `throttle.test.wfl` | Exactly ten failed credentials, next request blocked, persistence across restart, expired-window recovery and successful-login clearing. |
 | `recovery.test.wfl` | Stopped-site database-plus-upload backup, restart, actual restore after a later change, HTTP content/media and login, SQLite integrity and foreign-key checks. |
